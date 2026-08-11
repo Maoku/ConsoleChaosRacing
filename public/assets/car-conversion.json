@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "generation": "PS1",
+      "source": {
+        "path": "apps/racing/data/gen3_car.glb",
+        "sha256": "5e48569c625a00cf549069be7eb90b9bd6e87b23164bb92ad06480ee84a76c2e",
+        "bytes": 17839564
+      },
+      "runtime": {
+        "model": {
+          "path": "apps/racing/public/assets/gen3/models/car.glb",
+          "sha256": "e2241c7c15cc3bf694848c71a6c3fbc45727b0d79b4369c1cd6e5ebad3d4958c",
+          "bytes": 63524
+        },
+        "texture": {
+          "path": "apps/racing/public/assets/gen3/textures/car_base_color.png",
+          "sha256": "ac7d73740855fe9974e78c043d6f388296e22cdbdc9d8514aa710e26cf10dd49",
+          "bytes": 126165,
+          "dimensions": [
+            256,
+            256
+          ]
+        }
+      },
+      "geometry": {
+        "fingerprint": "563cd6ac12debde11146595b4b4543a131407876e3474b14267e7ade40bc8146",
+        "triangles": 978,
+        "vertices": 1769,
+        "bounds": {
+          "min": [
+            -0.9334640502929688,
+            -0.24853204190731049,
+            -0.43248504400253296
+          ],
+          "max": [
+            0.94520503282547,
+            0.23287703096866608,
+            0.43248504400253296
+          ],
+          "size": [
+            1.8786690831184387,
+            0.48140907287597656,
+            0.8649700880050659
+          ]
+        }
+      },
+      "frontAxis": "-X"
+    },
+    {
+      "generation": "PS2",
+      "source": {
+        "path": "apps/racing/data/gen4_car.glb",
+        "sha256": "b00d08a2f81790a39bdd8fb6f5c2214cb0bf0b15a1c61edc033fbb00de846c94",
+        "bytes": 6049508
+      },
+      "runtime": {
+        "model": {
+          "path": "apps/racing/public/assets/gen4/models/car.glb",
+          "sha256": "9abe9b04082cfd054535c9aa9bdd580717d1a4fd124b604850a78c551f1ec771",
+          "bytes": 593132
+        },
+        "texture": {
+          "path": "apps/racing/public/assets/gen4/textures/car_base_color.png",
+          "sha256": "4bef7d3111b223fe71dcbd9644adc3b6c7fd504dacea117b04f43f565311c610",
+          "bytes": 1261377,
+          "dimensions": [
+            1024,
+            1024
+          ]
+        }
+      },
+      "geometry": {
+        "fingerprint": "e61d6376caa5f25d55099d8cf170626ac5a34144d03e79828cb86b2e4194ae50",
+        "triangles": 13618,
+        "vertices": 13396,
+        "bounds": {
+          "min": [
+            -0.9530329704284668,
+            -0.2485319972038269,
+            -0.4403130114078522
+          ],
+          "max": [
+            0.9530329704284668,
+            0.2485319972038269,
+            0.4403130114078522
+          ],
+          "size": [
+            1.9060659408569336,
+            0.4970639944076538,
+            0.8806260228157043
+          ]
+        }
+      },
+      "frontAxis": "-X"
+    }
+  ]
+}
