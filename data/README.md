@@ -1,6 +1,6 @@
 # Racing source car assets
 
-`gen3_car.glb` and `gen4_car.glb` are immutable source assets. Runtime builds must only reference converted files under `apps/racing/public/assets`.
+`gen3_car.glb` and `gen4_car.glb` are immutable source assets. Runtime builds must only reference converted files under `public/assets`.
 
 | Source | Added | Recorded origin | SHA-256 | Geometry | Front axis |
 | --- | --- | --- | --- | --- | --- |
@@ -17,11 +17,15 @@ Conversion rules:
 - Extract and resize the base color as an external runtime texture.
 - Normalize the Gen4 identity `node.matrix` to implicit identity TRS.
 
-Rebuild and verify the runtime copies from the workspace root:
+Rebuild and verify the runtime copies from the repository root (the repository root is the
+application root — see `Docs/IMPLEMENTATION_PLAN.md` §2.4):
 
 ```sh
-npm run prepare:cars -w @console-chaos/racing
-npm run check:cars -w @console-chaos/racing
+npm run prepare:cars
+npm run check:cars
 ```
+
+`prepare:cars` is implemented in phase 2; `check:cars` is available from phase 0. The paths in
+`public/assets/car-conversion.json` are repository-root relative, so both tools read them as-is.
 
 `public/assets/car-conversion.json` is the deterministic conversion record. It stores source/runtime SHA-256 values, renderer-canonical geometry fingerprints, triangle/vertex counts, bounds, texture dimensions, and file sizes. Two consecutive conversion runs on 2026-08-11 produced byte-identical GLBs, textures, and records.

@@ -1,5 +1,26 @@
 {
+  "name": "@console-chaos/racing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:cars": "node tools/check-cars.mjs",
+    "build:minimap": "tsx tools/build-minimap.mjs",
+    "build:assets": "npm run build:minimap"
+  },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.1.0.tgz"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vitest": "^3.2.7"
   }
 }
