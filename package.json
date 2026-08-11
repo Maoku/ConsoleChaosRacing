@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@console-chaos/engine": "file:reference/console-chaos-engine-0.1.0.tgz"
+  }
+}

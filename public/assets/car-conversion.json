@@ -4,18 +4,18 @@
     {
       "generation": "PS1",
       "source": {
-        "path": "apps/racing/data/gen3_car.glb",
+        "path": "data/gen3_car.glb",
         "sha256": "5e48569c625a00cf549069be7eb90b9bd6e87b23164bb92ad06480ee84a76c2e",
         "bytes": 17839564
       },
       "runtime": {
         "model": {
-          "path": "apps/racing/public/assets/gen3/models/car.glb",
+          "path": "public/assets/gen3/models/car.glb",
           "sha256": "e2241c7c15cc3bf694848c71a6c3fbc45727b0d79b4369c1cd6e5ebad3d4958c",
           "bytes": 63524
         },
         "texture": {
-          "path": "apps/racing/public/assets/gen3/textures/car_base_color.png",
+          "path": "public/assets/gen3/textures/car_base_color.png",
           "sha256": "ac7d73740855fe9974e78c043d6f388296e22cdbdc9d8514aa710e26cf10dd49",
           "bytes": 126165,
           "dimensions": [
@@ -51,18 +51,18 @@
     {
       "generation": "PS2",
       "source": {
-        "path": "apps/racing/data/gen4_car.glb",
+        "path": "data/gen4_car.glb",
         "sha256": "b00d08a2f81790a39bdd8fb6f5c2214cb0bf0b15a1c61edc033fbb00de846c94",
         "bytes": 6049508
       },
       "runtime": {
         "model": {
-          "path": "apps/racing/public/assets/gen4/models/car.glb",
+          "path": "public/assets/gen4/models/car.glb",
           "sha256": "9abe9b04082cfd054535c9aa9bdd580717d1a4fd124b604850a78c551f1ec771",
           "bytes": 593132
         },
         "texture": {
-          "path": "apps/racing/public/assets/gen4/textures/car_base_color.png",
+          "path": "public/assets/gen4/textures/car_base_color.png",
           "sha256": "4bef7d3111b223fe71dcbd9644adc3b6c7fd504dacea117b04f43f565311c610",
           "bytes": 1261377,
           "dimensions": [
