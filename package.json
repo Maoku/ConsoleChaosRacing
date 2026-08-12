@@ -18,7 +18,9 @@
     "build:road": "tsx tools/build-road-texture.mjs",
     "build:sprites": "tsx tools/build-car-sprites.mjs",
     "build:skyline": "tsx tools/build-skyline.mjs",
-    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:sprites && npm run build:skyline"
+    "build:font": "tsx tools/build-font-atlas.mjs",
+    "build:logo": "tsx tools/build-title-logo.mjs",
+    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:sprites && npm run build:skyline && npm run build:font && npm run build:logo"
   },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"

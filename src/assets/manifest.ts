@@ -12,6 +12,7 @@ import {
   CAR_SPRITE_SOURCES,
 } from '../game/view/shared/car-sprite.js';
 import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
+import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import {
@@ -109,6 +110,11 @@ export const MANIFEST: RenderAssetManifest = {
     // 生成物（tools/build-minimap.mjs・フェーズ 1）。
     // 丸 / 四角 / 塗りつぶし。色は SpriteCommand.color で付ける
     { url: MARKER_ATLAS.url, columns: MARKER_ATLAS.columns, rows: MARKER_ATLAS.rows },
+    // 生成物（tools/build-font-atlas.mjs・フェーズ 7）。`OverlayCommand` は WebGL
+    // レンダラーで描かれないので、HUD の文字はこのアトラスのスプライトで出す
+    { url: FONT_ATLAS.url, columns: FONT_ATLAS.columns, rows: FONT_ATLAS.rows },
+    // 生成物（tools/build-title-logo.mjs・フェーズ 7）。1 枚で 4 世代ぶんを賄う
+    { url: LOGO_ATLAS.url, columns: LOGO_ATLAS.columns, rows: LOGO_ATLAS.rows },
     { url: 'assets/gen1/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen2/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen3/hud/minimap.png', columns: 1, rows: 1 },
