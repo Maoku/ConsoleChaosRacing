@@ -60,6 +60,20 @@ describe('フレームの契約', () => {
               `${material!.baseColorTexture} に flipY: false が無い（テクスチャが上下逆になる）`,
             ).toBe(false);
           }
+
+          // 環境マップも同じ理由で flipY: false。`equirectangularUv` は v = 0 を真上と
+          // みなすので、反転すると**空が地面として映り込む**（これも例外にならない）
+          for (const material of frame.materials) {
+            if (!material.environmentTexture) continue;
+            expect(
+              TEXTURE_URLS.has(material.environmentTexture),
+              `${material.environmentTexture} が manifest.textures に無い`,
+            ).toBe(true);
+            expect(
+              TEXTURES_BY_URL.get(material.environmentTexture)?.flipY,
+              `${material.environmentTexture} に flipY: false が無い（空が地面として映り込む）`,
+            ).toBe(false);
+          }
         });
 
         it(`${generation}: 参照するアセットがすべて manifest にある`, () => {
