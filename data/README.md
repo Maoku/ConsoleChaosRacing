@@ -21,11 +21,24 @@ Rebuild and verify the runtime copies from the repository root (the repository r
 application root — see `Docs/IMPLEMENTATION_PLAN.md` §2.4):
 
 ```sh
-npm run prepare:cars
-npm run check:cars
+npm run prepare:cars            # reconvert in memory and compare against the committed files
+npm run prepare:cars -- --write # actually overwrite the runtime GLBs and the record
+npm run check:cars              # SHA-256 of every recorded file
 ```
 
-`prepare:cars` is implemented in phase 2; `check:cars` is available from phase 0. The paths in
-`public/assets/car-conversion.json` are repository-root relative, so both tools read them as-is.
+The paths in `public/assets/car-conversion.json` are repository-root relative, so both tools read
+them as-is. `prepare:cars` reproduces both runtime GLBs **byte for byte** from the sources, and
+running it twice produces identical output.
+
+Two limits are worth stating plainly:
+
+- **The base color textures are not regenerated.** They are a downscale of the multi-megabyte
+  embedded PNG/JPEG, and matching the original byte-for-byte would require the same decoder,
+  resampling kernel, and PNG encoder settings. This repository deliberately carries no image
+  codec dependency, so the textures are treated as recorded artifacts and verified by
+  `check:cars` rather than rebuilt.
+- **`geometry.fingerprint` is not rewritten.** It is described as a renderer-canonical
+  fingerprint, and that canonicalization cannot be recovered from the artifacts alone. The
+  recorded value is preserved; `bytes` and `sha256` pin the files well enough on their own.
 
 `public/assets/car-conversion.json` is the deterministic conversion record. It stores source/runtime SHA-256 values, renderer-canonical geometry fingerprints, triangle/vertex counts, bounds, texture dimensions, and file sizes. Two consecutive conversion runs on 2026-08-11 produced byte-identical GLBs, textures, and records.
