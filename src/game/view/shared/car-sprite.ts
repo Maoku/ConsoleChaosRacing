@@ -105,14 +105,26 @@ export interface CarSpritePlacement {
 }
 
 /**
- * 操舵量からセルを選ぶ。0 = 左傾き、1 = 正面、2 = 右傾き。
+ * 傾きのセルを選ぶ。1 が正面。
  *
- * 判定に使うのは操舵そのものではなく **コース接線に対するヨー角** にする。
- * 舵を当てているだけの直進では車体が傾かず、実際に向きが変わったときだけ絵が変わる。
+ * ## 列と向きの対応（絵を実測して確定）
+ *
+ * 列 0 の絵は、車のノーズが画面の右奥を向き、見えている側面が**車の右側**になっている。
+ * 追走カメラから車の右側面が見えるのは車が**右へ向きを変えたとき**なので、
+ * **列 0 = 右コーナー・列 2 = 左コーナー**である。実装計画が「左傾き / 正面 / 右傾き」と
+ * 書いているのは車体のロール方向のことで、右コーナーでは車体は左へ傾く（外側へ）。
+ * 素直に「左 → 0」と読むと左右が逆になる。
+ *
+ * ## 判定に使う量
+ *
+ * **横加速度**（`speed × ヨー角速度`）を見る。コース接線に対するヨー角では、
+ * 曲がれている間は車体が接線に沿うので値がほぼ 0 になり、コーナーの最中に
+ * 絵が正面へ戻ってしまう。横加速度ならコーナーの間ずっと符号が立つ。
+ * `CarState` がこの値を「車体ロールの元」として持っているのもそのため。
  */
-export function steerCellOffset(car: DisplayCar, threshold = 0.045): number {
-  if (car.yaw > threshold) return 2;
-  if (car.yaw < -threshold) return 0;
+export function steerCellOffset(car: DisplayCar, threshold = 3.5): number {
+  if (car.lateralAccel > threshold) return 0;
+  if (car.lateralAccel < -threshold) return 2;
   return 1;
 }
 
