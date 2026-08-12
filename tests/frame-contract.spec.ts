@@ -21,6 +21,7 @@ import { buildFrame, raceAfter } from './support/frame.js';
 
 const MODEL_URLS = new Set(MANIFEST.models.map((model) => model.url));
 const TEXTURE_URLS = new Set(MANIFEST.textures.map((texture) => texture.url));
+const TEXTURES_BY_URL = new Map(MANIFEST.textures.map((texture) => [texture.url, texture]));
 const ATLAS_URLS = new Set(MANIFEST.atlases.map((atlas) => atlas.url));
 const GEOMETRY_KEYS = new Set(MANIFEST.geometries.map((geometry) => geometryCommandKey(geometry)));
 
@@ -52,6 +53,12 @@ describe('フレームの契約', () => {
               TEXTURE_URLS.has(material!.baseColorTexture!),
               `${material!.baseColorTexture} が manifest.textures に無い`,
             ).toBe(true);
+            // glTF の UV は v = 0 が画像の上端。レンダラーの既定（flipY: true）のままだと
+            // 上下逆に貼られ、例外にならないまま車体が迷彩柄になる
+            expect(
+              TEXTURES_BY_URL.get(material!.baseColorTexture!)?.flipY,
+              `${material!.baseColorTexture} に flipY: false が無い（テクスチャが上下逆になる）`,
+            ).toBe(false);
           }
         });
 

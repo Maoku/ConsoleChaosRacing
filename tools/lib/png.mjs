@@ -1,10 +1,13 @@
 /**
- * 依存無しの最小 PNG エンコーダと、生成ツールが使う小さなラスタ。
+ * 依存無しの最小 PNG エンコーダ／デコーダと、生成ツールが使う小さなラスタ。
  *
  * 生成ツールは**決定論的**であることが要件（実装計画 §2.6）なので、
  * 圧縮設定を固定し、浮動小数の丸めも明示的に行う。
+ *
+ * デコーダは本作が実際に扱う範囲だけを読む（8bit / colorType 2・6 / 非インターレース）。
+ * 汎用にはしない — 範囲外は明示的に失敗させる。
  */
-import { deflateSync } from 'node:zlib';
+import { deflateSync, inflateSync } from 'node:zlib';
 
 const CRC_TABLE = (() => {
   const table = new Int32Array(256);
@@ -146,4 +149,150 @@ export class Raster {
   toPng() {
     return encodePng(this.width, this.height, this.pixels);
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// デコード
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * PNG → { width, height, pixels }（RGBA8）。
+ * 対応: bitDepth 8 / colorType 2 (RGB)・6 (RGBA) / 非インターレース。
+ */
+export function decodePng(buffer) {
+  if (buffer.readUInt32BE(0) !== 0x89504e47) throw new Error('PNG のシグネチャが一致しない');
+
+  let offset = 8;
+  let header = null;
+  const idat = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      header = {
+        width: data.readUInt32BE(0),
+        height: data.readUInt32BE(4),
+        bitDepth: data[8],
+        colorType: data[9],
+        interlace: data[12],
+      };
+    } else if (type === 'IDAT') {
+      idat.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+    offset += 12 + length;
+  }
+  if (!header) throw new Error('IHDR が無い');
+  if (header.bitDepth !== 8) throw new Error(`bitDepth ${header.bitDepth} は非対応（8 のみ）`);
+  if (header.interlace !== 0) throw new Error('インターレース PNG は非対応');
+  if (header.colorType !== 2 && header.colorType !== 6) {
+    throw new Error(`colorType ${header.colorType} は非対応（2 / 6 のみ）`);
+  }
+
+  const channels = header.colorType === 6 ? 4 : 3;
+  const stride = header.width * channels;
+  const raw = inflateSync(Buffer.concat(idat));
+  const out = Buffer.alloc(header.width * header.height * 4);
+
+  // 直前の行を持ち回りながらフィルタを外す（PNG 仕様 §9）
+  let previous = Buffer.alloc(stride);
+  for (let y = 0; y < header.height; y++) {
+    const rowStart = y * (stride + 1);
+    const filter = raw[rowStart];
+    const row = Buffer.from(raw.subarray(rowStart + 1, rowStart + 1 + stride));
+    unfilterRow(filter, row, previous, channels);
+
+    for (let x = 0; x < header.width; x++) {
+      const from = x * channels;
+      const to = (y * header.width + x) * 4;
+      out[to] = row[from];
+      out[to + 1] = row[from + 1];
+      out[to + 2] = row[from + 2];
+      out[to + 3] = channels === 4 ? row[from + 3] : 255;
+    }
+    previous = row;
+  }
+
+  return { width: header.width, height: header.height, pixels: out };
+}
+
+function unfilterRow(filter, row, previous, bytesPerPixel) {
+  switch (filter) {
+    case 0:
+      return;
+    case 1:
+      for (let i = bytesPerPixel; i < row.length; i++) row[i] = (row[i] + row[i - bytesPerPixel]) & 0xff;
+      return;
+    case 2:
+      for (let i = 0; i < row.length; i++) row[i] = (row[i] + previous[i]) & 0xff;
+      return;
+    case 3:
+      for (let i = 0; i < row.length; i++) {
+        const left = i >= bytesPerPixel ? row[i - bytesPerPixel] : 0;
+        row[i] = (row[i] + ((left + previous[i]) >> 1)) & 0xff;
+      }
+      return;
+    case 4:
+      for (let i = 0; i < row.length; i++) {
+        const left = i >= bytesPerPixel ? row[i - bytesPerPixel] : 0;
+        const upLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
+        row[i] = (row[i] + paeth(left, previous[i], upLeft)) & 0xff;
+      }
+      return;
+    default:
+      throw new Error(`未知の PNG フィルタ: ${filter}`);
+  }
+}
+
+function paeth(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  return pb <= pc ? b : c;
+}
+
+/**
+ * 整数倍のボックス縮小。1024² → 256² のように割り切れる場合だけを扱う。
+ *
+ * 整数倍に限るのは決定論のため — 任意倍率のリサンプルはフィルタの選び方で
+ * 結果が変わり、「二度実行してバイト一致」の保証が設計判断に依存してしまう。
+ */
+export function downscaleBox(image, factor) {
+  if (!Number.isInteger(factor) || factor < 1) throw new Error('縮小率は 1 以上の整数のみ');
+  if (image.width % factor !== 0 || image.height % factor !== 0) {
+    throw new Error(`${image.width}x${image.height} を ${factor} で割り切れない`);
+  }
+  const width = image.width / factor;
+  const height = image.height / factor;
+  const pixels = Buffer.alloc(width * height * 4);
+  const samples = factor * factor;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let a = 0;
+      for (let sy = 0; sy < factor; sy++) {
+        for (let sx = 0; sx < factor; sx++) {
+          const from = ((y * factor + sy) * image.width + x * factor + sx) * 4;
+          r += image.pixels[from];
+          g += image.pixels[from + 1];
+          b += image.pixels[from + 2];
+          a += image.pixels[from + 3];
+        }
+      }
+      const to = (y * width + x) * 4;
+      // 四捨五入は Math.round に固定する（丸め方を変えると出力が変わる）
+      pixels[to] = Math.round(r / samples);
+      pixels[to + 1] = Math.round(g / samples);
+      pixels[to + 2] = Math.round(b / samples);
+      pixels[to + 3] = Math.round(a / samples);
+    }
+  }
+  return { width, height, pixels };
 }

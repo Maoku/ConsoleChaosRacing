@@ -28,8 +28,9 @@ const trackModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
 const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
   const lod = TRACK_MESH_LODS[generation];
   if (!lod) return [];
-  // v 方向に周回ぶんタイルするので repeat。u は帯の内側に収めてある
-  return [{ url: trackSurfaceTexture(lod), wrap: 'repeat' as const }];
+  // v 方向に周回ぶんタイルするので repeat。u は帯の内側に収めてある。
+  // flipY: false はメッシュのテクスチャ共通の規約（下の textures のコメントを参照）
+  return [{ url: trackSurfaceTexture(lod), wrap: 'repeat' as const, flipY: false }];
 });
 
 /**
@@ -50,8 +51,12 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen1/backgrounds/coast.png', wrap: 'repeat' },
     { url: 'assets/gen2/tiles/circuit.png', wrap: 'clamp' },
     { url: 'assets/gen2/backgrounds/coast.png', wrap: 'repeat' },
-    { url: 'assets/gen3/textures/car_base_color.png', wrap: 'clamp' },
-    { url: 'assets/gen4/textures/car_base_color.png', wrap: 'clamp' },
+    // **メッシュが参照するテクスチャは必ず `flipY: false`。**
+    // glTF の UV は v = 0 が画像の上端だが、レンダラーは `textures` を既定 `flipY: true` で
+    // 取り込む（アトラスだけは false を強制する）。指定を忘れると上下逆に貼られ、
+    // 車体が迷彩柄のようになる。`frame-contract.spec.ts` がこの規約を検査する。
+    { url: 'assets/gen3/textures/car_base_color.png', wrap: 'clamp', flipY: false },
+    { url: 'assets/gen4/textures/car_base_color.png', wrap: 'clamp', flipY: false },
     { url: 'assets/gen4/environment/circuit.png', wrap: 'repeat' },
     ...trackTextures,
   ],
