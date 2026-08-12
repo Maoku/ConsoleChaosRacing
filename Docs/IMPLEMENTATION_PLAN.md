@@ -425,22 +425,24 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
 
 - `CameraCommand.projection = 'perspective'`、自機の後方 6.5 m / 高さ 2.2 m、注視点は自機の 12 m 前方。速度に応じて FOV を 60°→72°、カメラ距離を微増。
 - コースは `tools/build-track-mesh.mjs` が中心線から生成した GLB を `MeshCommand.asset` で描く。`TransformCommand` に X/Z 回転が無いため、バンクと標高はメッシュに焼き込むしかない。
-  - 出力: `public/assets/gen3/models/track.glb`（粗・PS1 用）と `public/assets/gen4/models/track.glb`（細・PS2 用）
-  - 分割: PS1 は 4 m 刻み、PS2 は 1 m 刻み。**PS1 側をあえて粗くするのではなく、細かくしすぎない**ことでアフィンテクスチャの歪みと頂点量子化の揺れが画面に出る（エンジンの `geometry.ts` が明記している性質）
-  - 路面 / 縁石 / 草地 / ガードレールを別マテリアルのプリミティブに分ける
-- 車は `MeshCommand.asset = 'assets/genN/models/car.glb'`。**前方が `-X`** なので `transform.rotationY = heading + π/2` で補正する（符号は実装時に 1 回だけ実測して定数化する）。
+  - 出力: `public/assets/gen3/models/track-NN.glb`（粗・PS1 用）と `public/assets/gen4/models/track-NN.glb`（細・PS2 用）。**セクターごとに 1 ファイル**にする（下の「セクター分割の役割」を参照）
+  - 分割: PS1 は 4 m 刻み、PS2 は 1 m 刻み。**PS1 側をあえて粗くするのではなく、細かくしすぎない**ことでアフィンテクスチャの歪みと頂点量子化の揺れが画面に出る（エンジンの `geometry.ts` が明記している性質）。あわせて路面を横方向にも分割する（PS1 は 6 分割 ＝ 1 マス 2 m）。粗すぎると揺れが「面の波打ち」ではなく「物体全体の平行移動」に見えてしまう（§6.1 第3世代基準 2）
+  - **路面 / 縁石 / 草地は 1 枚のアトラスの別々の u 帯へ写す**（実装で確定）。`MeshCommand` は `asset` の全プリミティブを 1 つの `MaterialCommand` で描くため、面ごとにマテリアルを分けるにはメッシュ自体を分けるしかない。当時のテクスチャページと同じ作りにするほうが素直で、三角形単位のソートも 1 回で済む
+  - セクター分割の役割は**描画距離のカリング**であって前後関係ではない。前後関係は ordering table が受け持つ（下記）。セクターの継ぎ目は同じ弧長から同じ式で生成するので頂点が完全一致し、割れない
+  - 三角形の巻き順は**上から見て反時計回り**（法線が +Y）。逆にすると裏面カリングで路面がまるごと消える
+- 車は `MeshCommand.asset = 'assets/genN/models/car.glb'`。**前方が `-X`** なので `transform.rotationY` で補正する。`rotationY(θ)` は局所 (x, 0, z) を (x·cosθ + z·sinθ, 0, −x·sinθ + z·cosθ) へ写すので、局所前方 (−1, 0, 0) をワールドの進行方向 (cos H, 0, sin H) に合わせると **θ = π − H**（実装で確定・`car-orientation.spec.ts` が固定）。
 - runtime GLB は material も image も持たない（変換で除去済み・実測確認済み）。したがって `MaterialCommand`（`baseColorTexture` に `assets/genN/textures/car_base_color.png`）を**必ず**積む。積み忘れると fallback 柄で描かれ、例外にならないので気付きにくい。§6.2 の `frame-contract.spec.ts` で検出する。
-- 影は `castShadow: true` + `groundY` を路面高に設定（エンジンが点光源から落ち影を落とす）。
+- 影は `castShadow: true` + `groundY` を路面高に設定（エンジンが点光源から落ち影を落とす）。**第3世代は `dynamicLight: false` なので点光源が無く、影は落ちない**。指定は残しておき、実際に効くのは第4世代から。
 
 **第3世代（PS1）固有**:
 
-- `depthBuffer: false` ⇒ メッシュは 12 スロットの ordering table を 0→11 の順に走査して描かれる（既定: opaque world 1..8 / 半透明 9 / スクリーン空間スプライト 10 / debug 11）。車とコースの前後関係が破綻しないよう、コースを大きな 1 メッシュにせず**セクター分割**（約 50 m ごと）して個別の `MeshCommand` にする。
+- `depthBuffer: false` ⇒ メッシュは 12 スロットの ordering table を 0→11 の順に走査して描かれる（既定: opaque world 1..8 / 半透明 9 / スクリーン空間スプライト 10 / debug 11）。**車とコースの前後関係はセクター分割ではなくスロットで決める** — 路面に `polygonSortRange: [1, 8]` を与えて三角形単位に分配し、車は `orderTableIndex: 9` の固定スロットへ置く。こうすれば車が路面へ埋まることが構造的に起こらない。
 - `MaterialCommand.polygonSort: true`（および `RenderModelAsset.polygonSort`）を車とコースに設定し、ポリゴン単位ソートを有効化。さらに **路面には `polygonSortRange` を与え、自機は `orderTableIndex: 9` の固定スロットへ置く**（0.2.0 のリリースノートが「プレイヤーが床より奥へ描画される」問題の対処としてこの組み合わせを挙げている）。
 - 半透明を使う箇所は `{ family: 'gen3-semitransparency', mode: … }` の 4 固定モードから選ぶ。任意の不透明度は出せない。
 - `vertexQuantize: 2` と `affineTexture: true` はエンジンが自動適用。**頂点の揺れとテクスチャの歪みを消そうとしない**。
 - `dynamicLight: false` ⇒ ライティングは `LightCommand` の ambient / directional のフォールバックのみ。`MaterialCommand.ambient` / `diffuse` を明るめに調整して焼き込み風にする。
 - `BackgroundCommand.fogDensity` で遠景を切る（当時の描画距離の短さ）。遠景は `coast.png` 相当ではなく単色＋フォグ。
-- 30Hz 量子化: 車のホイール回転・車体ロールなど見た目の更新を 30Hz に丸める。
+- 30Hz 量子化: `view/shared/display-state.ts` のラッチが、シムのティックから整数演算で表示フレーム番号を求め、その境目でだけ車の値を写し取る。ビューは `RaceState.cars` を直接読まない。
 
 **第4世代（PS2）固有**:
 
