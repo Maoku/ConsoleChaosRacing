@@ -7,6 +7,7 @@
 - 作成日: 2026-08-12
 - 更新: 2026-08-12（エンジン導入完了・更新版 README を反映・`car-conversion.json` のパス修正を反映・§9 の決定事項 6 項目を反映）
 - 更新: 2026-08-12（フェーズ 0・1 の実装完了を反映。**エンジン 0.2.0 への更新を反映** — スプライトのシーン統合・`HardwareBlendCommand`・第3世代の 12 スロット ordering table）
+- 更新: 2026-08-12（フェーズ 3 の実装完了を反映 — 走査線 `width ≤ 1` が「路面が細くなれる限界」も決めること・`BackgroundCommand.parallax` が読まれないこと・生成アセットの色はマスターパレットに載せること）
 
 ---
 
@@ -65,7 +66,11 @@
 | PS1 は `depthBuffer:false`。0.2.0 では距離順のソートに代えて **view-space depth に基づく 12 スロットの安定 ordering table** を走査する。`MaterialCommand.polygonSort` / `RenderModelAsset.polygonSort` に加えて `polygonSortRange` で三角形単位の安定 partition 範囲を指定できる | 第3世代は面のちらつきが出る前提で組む（当時の表現そのもの）。前後関係を確実にしたい要素は `orderTableIndex` で固定スロットへ置く |
 | `rasterSurfaces` / `affineSurfaces` は**背景の後・メッシュの前**に描かれる | 路面サーフェス上に車スプライトを重ねられる |
 | ラスタールックアップは **8bit に量子化**されて GPU に渡る（`createRasterLookupEncoder`）。center / width / sourceV / brightness の各値が 1/255 刻み | 近距離行の路面幅が段付きになる。当時の HDMA テーブルと同じ性質なので**そのまま採用する** |
-| `RasterSurfaceCommand` の scanline `width` は **(0, 1] に制限**され、範囲外は `throw` | 第1世代の描画距離に上限が生まれる（§3.2 で数式化） |
+| `RasterSurfaceCommand` の scanline `width` は **(0, 1] に制限**され、範囲外は `throw` | 第1世代の描画距離に上限が生まれる（§3.2 で数式化）。**さらに `roadPx = roadFraction × 画面幅 / width` なので、路面が細くなれる限界も同じ制限が決める** — 路面テクスチャの `roadFraction` を小さく作る以外に手が無い |
+| ラスターの `center` / `sourceV` は 8bit へ書き出すとき `fract` される（`createRasterLookupEncoder`） | [0, 1) を出た `center` は路面を反対側から巻き戻して出す。CPU 側で丸める |
+| `BackgroundCommand.parallax` は **WebGL レンダラーが読まない**。効くのは `repeat[0]` / `offset[0]` / `placement.bottom + offset[1]` / `placement.height` の 4 つだけ。層は**遠景・近景の 2 枚まで**で、テクスチャを持たない背景 1 つが空の階調（`color` が下端・`secondaryColor` が上端）と `brightness` を決める | 視差はゲーム側で `offset` へ畳み込む（§3.2） |
+| `SpriteCommand` は **後に積んだものが手前**に描かれる | 実機の OAM は「番号が若いほど優先度が高く、かつ手前」なので、走査線制限の登録順とは**逆順に積む**（§3.2） |
+| FC の 54 色マスターパレットへの丸めは**最近傍**（`nearestMasterIndex`） | 生成アセットの色はパレットの値そのものを置く。外れた色は隣へ落ち、塗り分けが消える（§3.2） |
 | `AffineSurfaceCommand` には幅の制限が無い | 第2世代は描画距離を伸ばせる |
 | 音声は `createGenerationAudioService` が `profile.audio.synth` ごとに音源を登録し、`GameHost` が世代切替時に自動で差し替える。`MusicClock` により**位相は保たれる** | 曲データは 1 つ。編曲だけ `useScore` で差し替える |
 | 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3 |
@@ -261,6 +266,8 @@ Docs/
 | `build:minimap` | コース中心線 → 世代別ミニマップ PNG | 1 |
 | `prepare:cars` | `data/*.glb` → runtime GLB・テクスチャの再変換 | 2 |
 | `build:track` | コース中心線 → `gen{3,4}/models/track.glb` | 2 / 5 |
+| `build:road` | 第1世代のラスター路面テクスチャ | 3 |
+| `build:sprites` | 車スプライトのアトラス整形 | 3 |
 | `build:font` | HUD フォントアトラス | 7 |
 | `build:logo` | タイトルロゴ | 7 |
 | `build:assets` | 上記の生成系をまとめて実行 | 7 |
@@ -284,6 +291,8 @@ Docs/
 | `public/assets/gen4/models/track.glb` | `build-track-mesh.mjs` | 第4世代コース（1 m 刻み） | 5 |
 | `public/assets/gen{3,4}/textures/track_surface.png` | 同上 | 路面・縁石・草地を 1 枚に収めたアトラス | 2 / 5 |
 | `public/assets/gen{3,4}/textures/car_paint.png` | `build-car-paint.mjs` | 無彩色の塗装テクスチャ（256² / 512²）。車体色は実行時の乗算で決まる | 2 |
+| `public/assets/gen1/road/road_wide.png` | `build-road-texture.mjs` | 第1世代のラスター路面（1024×256 / 横 84 m・縦 96 m）。同梱の `road.png` では描画距離が伸びない（§3.2） | 3 |
+| `public/assets/gen{1,2}/sprites/car_frames.png` | `build-car-sprites.mjs` | 車スプライトの整形（384×256 / 3×2）。同梱の `cars.png` は絵がセル境界をはみ出している（§3.2） | 3 |
 | `public/assets/common/font.png` | `build-font-atlas.mjs` | HUD（8×8 / 16×6） | 7 |
 | `public/assets/common/logo.png` | `build-title-logo.mjs` | タイトルロゴ | 7 |
 | `public/assets/gen2/tiles/circuit_map.png` | `build-track-map.mjs` | 第2世代の改善案（§3.3）。必要になった場合のみ | 8 |
@@ -370,23 +379,39 @@ bright = fog(z) * stripe(i)                             // scanline[4i+3]
 zMax = WIDTH_MAX * TEX_W * focal / W        （WIDTH_MAX は安全マージン込みで 0.85 を採る）
 ```
 
-- `TEX_W = 26 m`（`road.png` の中央約 46% が路面 ⇒ 実効路面幅 12 m）
-- `focal = 700`（縦画角 ≒ 18°。2D の路面なので実カメラと一致させる必要は無い）
-- ⇒ `zMax ≒ 60 m`、`yH` を画面上 42% に置くと `z_near ≒ 8 m`
+**この制限は描画距離だけでなく「路面が細くなれる限界」も決める**（フェーズ 3 の実装で確定）。距離 `z` の路面が画面に占める幅は
 
-近距離行では `widthU` が小さく 8bit 量子化の刻みが相対的に粗くなり、路面の縁が段付きになる。**これは HDMA テーブルと同じ性質なので修正しない**。ただし `widthU` の最小値が 0.05 を下回ると崩れるため、`camY` と `yTop` はその範囲で決める。
+```
+roadPx(z) = roadFraction * W / widthU(z)      roadFraction = 路面がテクスチャ幅に占める割合
+```
+
+なので、`widthU ≤ 1` である以上 **路面は `roadFraction * W` より細くならない**。同梱の `road.png` は路面が 44.5% を占めるため下限が 114 px（画面の 45%）になり、要求の「奥に進む見え方」が成立しない。したがって §8 のリスク表が挙げている対処（横に広い路面テクスチャの再生成）を**フェーズ 3 の必須作業として実施する**。
+
+- `TEX_W = 84 m`・`roadFraction = 1/7`（`tools/build-road-texture.mjs` が生成する `road_wide.png`）
+- `TEX_L = 96 m`（センターラインの周期 24 m × 4）。**6Hz 表示では 1 フレームに最大 13 m 進む**ので、これより短い周期にすると速度が読めなくなる
+- `focal = 300`（横画角 ≒ 46°）・`camY = 4.0 m`・`yH = 88`・`yTop = 101`・カメラは自機の後方 9.5 m
+- ⇒ `zMax ≒ 98 m`、`z_near ≒ 8.9 m`、最遠の路面は 37 px（画面の 14%）
+
+`camY` が 4 m と高いのは意図的で、これが「路面が奥で細くなる」量を決めている。目線を下げると路面が太いまま地平線に届く。なお `camY` は独立に選べる値ではなく、`camY = widthU下限 × TEX_W × (画面下端 − yH) / W` で決まる。
+
+近距離行では `widthU` が小さく 8bit 量子化の刻みが相対的に粗くなり、路面の縁が段付きになる。**これは HDMA テーブルと同じ性質なので修正しない**。ただし `widthU` の最小値が 0.09 を下回ると `center` の量子化誤差（`0.5 / widthU` 画素）が目立つため、`camY` と `yTop` はその範囲で決める。
+
+`center` は 8bit へ書き出すときに `fract` される。コーナーの先で路面が画面外へ流れると素の値が [0, 1) を出て、**路面が反対側から巻き戻って現れる**。CPU 側で [0, 1) に丸める。路面はテクスチャ中央の狭い帯なので、端で止めれば「画面外へ流れる」見え方はそのまま残る。
 
 テクスチャの `wrap` は **`clamp`** にする（`sourceV` を CPU 側で `fract` 済みにするため縦の repeat は不要）。これにより路面が画面外へ流れるコーナーでも横は草地が伸び、二重の道路が現れない。
 
 - **速度感**: `sourceV` の進み（＝ `s0` の増加）が唯一の速度表現。破線センターラインの流れが速度に直結する。
-- **縞**: `bright` を偶奇行で 0.94 / 1.00 に振り、遠方ほど差を詰める。走査線の存在を色で見せる。
-- **遠景**: `BackgroundCommand` に `coast.png`、`parallax` を自機の向き（`heading`）に、`offset.y` を標高に連動。`placement` で地平線に合わせる。
-- **車**: `SpriteCommand` を `screenSpace: true` で積む。自機は画面下部固定、`cell` はステア量で 0/1/2（黄）を選び **6Hz に量子化**。ライバルは `cell` 3/4/5（赤）、`size` を `halfPx(z)` に比例させ、`position` は `cx(z)` と行 `y(z)` に置く。
-- **ちらつき**: `applyScanlineLimit(sprites, 8, 224)` を使い、走査線あたり 8 スプライトを超えた分を消す。`createFlickerState` で「消えたスプライトは次ティックの当たり判定も消える」を再現する。登録順（＝優先度）は **自機 → ミニマップの車マーカー → ライバル車**。自機は必ず先頭に登録して消えないようにする。ミニマップの枠と HUD 文字は BG 相当として制限の対象外、マーカーは対象内で毎フレーム順序を巡回させる（§3.6 に根拠）。
+- **縞**: `bright` を偶奇行で 0.94 / 1.00 に振り、遠方ほど差を詰める。走査線の存在を色で見せる。明るさは 1/16 段に丸める（連続に振ると量子化後の色数が増える）。
+- **遠景**: `BackgroundCommand` に `coast.png`。ただし **`parallax` は WebGL レンダラーが読まない**（実装で確定）。効くのは `repeat[0]` / `offset[0]` / `placement.bottom + offset[1]` / `placement.height` の 4 つだけなので、視差は視線の回転量から `offset` へ畳み込む。層は遠景・近景の 2 枚まで、テクスチャを持たない背景 1 つが空の階調を決める。
+- **車**: `SpriteCommand` を `screenSpace: true` で積む。**自機もライバルも同じ 1 本の式で置く** — カメラを自機の後方 9.5 m に引いてあるので、自機は「距離 9.5 m の車」として素直に扱え、隣に並んだ 2 台が同じ大きさで描かれる。`cell` はコース接線に対するヨー角で 0/1/2（黄）を選び、値は `DisplayLatch` が 6Hz へ量子化済み。ライバルは `cell` 3/4/5（赤）。
+  - 同梱の `cars.png` は**絵がセルの境界を 2 px はみ出している**ため、正面のセルを描くと両端に隣の車の破片が出る。`tools/build-car-sprites.mjs` がセル中央へ・接地線を揃えて焼き直す（実装で確定）。
+- **ちらつき**: `applyScanlineLimit(sprites, 8, 224)` を使い、走査線あたり 8 スプライトを超えた分を消す。数えるのは**絵のある行だけ**にする（セルの透明部分は実機ではタイルを置かない）。登録順（＝優先度）は **自機 → ミニマップの車マーカー → ライバル車**。自機は必ず先頭に登録して消えないようにする。ミニマップの枠と HUD 文字は BG 相当として制限の対象外、マーカーは対象内で毎フレーム順序を巡回させる（§3.6 に根拠）。
+  - **積む順は登録順の逆にする**（実装で確定）。実機の OAM は番号が若いほど優先度が高く、かつ手前に出るが、エンジンは後に積んだスプライトを手前に描くため。
+  - `createFlickerState` に落ちた車を記録するが、**シムへは戻さない**（実装で確定）。戻すと世代によってシムの状態が変わり、§6.1 世代横断 1 と `generation-invariance.spec.ts` が壊れる。当たり判定へ効かせるかどうかは、判定を持つ側（フェーズ 8 以降）の判断に委ねる。
 - **能力契約（§1.4）の遵守**:
-  - `maxSimultaneousColors: 25` — 54 色への量子化はエンジンが行うが**同時 25 色は自動では守られない**。半透明・グラデーション・色数の多い合成を積まない。検証は §6.2 の色数カウント。
+  - `maxSimultaneousColors: 25` — 54 色への量子化はエンジンが行うが**同時 25 色は自動では守られない**。半透明・グラデーション・色数の多い合成を積まない。検証は §6.2 の色数カウント。**生成アセットの色は 54 色マスターパレットの値そのものを置く**（実装で確定）。外れた色は最近傍で隣へ落ち、塗り分けがそのまま消える。
   - `paletteBlockSize: 16` — 遠景と路面の色の切り替わりを 16px ブロック境界に合わせる。
-  - `tileSnap: 8` — 遠景のスクロール量とスプライトの配置座標を **8px に丸める**。`Math.round(x / 8) * 8`。ラスターサーフェスの scanline 値はこの対象外（走査線単位のスクロールが第1世代の売りであるため）。
+  - `tileSnap: 8` — 遠景のスクロール量と車スプライトの配置座標を **8px に丸める**。`Math.round(x / 8) * 8`。丸めるのは車の中心ではなく**接地点**にする（実装で確定）。中心を丸めると、大きさが変わるちょうどその瞬間に車が路面から浮く。ラスターサーフェスの scanline 値と**ミニマップのマーカー**はこの対象外（前者は走査線単位のスクロールが第1世代の売りであるため、後者は §3.6 の根拠による）。
   - `translucency: { kind: 'none' }` — 落ち影・半透明を一切積まない（`hardwareBlend` を付けたコマンドを 1 つも作らない）。影は単色のスプライトかドット抜きで表現する。
 
 > README も「疑似3Dや曲面道路は `RasterSurfaceCommand` の scanline table で表現する。各走査線の source 位置・幅・明るさを変え、`rasterScroll` pass で水平スクロールや遠近を作る」と明記しており、本節の設計と一致する。
@@ -763,11 +788,15 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 
 ### フェーズ 3 — 第1世代（FC）
 
-- `view/shared/projection.ts` / `backdrop.ts` / `car-sprite.ts`
+- `tools/build-road-texture.mjs`（広い路面テクスチャ）と `tools/build-car-sprites.mjs`（スプライトの整形）
+- `view/shared/projection.ts` / `backdrop.ts` / `car-sprite.ts` / `road-surface.ts`
 - `view/gen1-fc.ts`（ラスターサーフェス、`applyScanlineLimit`、6Hz 量子化）
 - ミニマップの FC variant（8px グリッド配置、2 色マーカー、走査線制限への参加と順序巡回）
-- `raster-scanline.spec.ts`
+- `raster-scanline.spec.ts` / `capability-contract.spec.ts`
 - **完了条件**: §6.1 の第1世代基準 1–9 を満たす
+- **残件**（フェーズ 8 で扱う）:
+  - 基準 1・4 の実測 — 実画面の色数カウントと、9 台が重なる場面のスクリーンショット確認。自機が先頭を走るあいだライバルは常に後方にいるため、密集の場面は自機を操作するか AI の速度差を付ける必要がある
+  - ミニマップのマーカー（2×2 px・白/灰）が白い輪郭線に紛れる。FC の 2 色制約の中で読ませる方法は要検討
 - **なぜここか**: 4 世代で最も調整量が多く、リスクが高い。早く着手して改善の時間を確保する
 
 ### フェーズ 4 — 第2世代（SFC）
@@ -820,7 +849,7 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 
 | リスク | 影響 | 対策 |
 | --- | --- | --- |
-| 第1世代の描画距離が短く「奥に進む」感が出ない | 要求未達 | `focal` を大きく取り（§3.2 の数式）、地平線を高めに置く。それでも不足なら `road.png` を横に広い版として再生成し `TEX_W` を拡大する |
+| ~~第1世代の描画距離が短く「奥に進む」感が出ない~~ | ~~要求未達~~ | **フェーズ 3 で発生し、対処済み。** `widthU ≤ 1` は描画距離だけでなく「路面が細くなれる限界」（`roadFraction × 画面幅`）も決めるため、`road.png` のままでは `focal` をいくら動かしても路面が画面の 45% より細くならない。`tools/build-road-texture.mjs` で `TEX_W = 84 m`・`roadFraction = 1/7` の版を生成し、最遠 37 px まで収束させた（§3.2） |
 | 第2世代の per-scanline アフィンが 120 ドローコールで重い | フレーム落ち | 帯粒度を定数化し 2 行 / 4 行へ落とせるようにする。GPU 側は全画面三角形 1 枚なので帯化の効果は大きい |
 | `circuit.png` が直線路タイルのため Mode 7 らしい「マップの回転」が出ない | 第2世代の説得力不足 | `uvStepX` の回転成分で視界の傾きを出す。不足ならコースマップ PNG を生成して切り替える（§3.3 の改善案） |
 | PS1 に深度バッファが無く車がコースに埋まる | 破綻 | コースをセクター分割し、`polygonSort` と `polygonSortRange` を設定。自機は `orderTableIndex: 9` の固定スロットへ置き、路面の partition 範囲より常に後で描く（0.2.0 の修正で推奨された組み合わせ） |
