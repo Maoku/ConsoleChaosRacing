@@ -8,7 +8,8 @@ import {
   type SpriteCommand,
 } from '@console-chaos/engine';
 
-import type { CarState, RaceState } from '../../sim/state.js';
+import type { Track } from '../../sim/track.js';
+import type { DisplayCar } from './display-state.js';
 import {
   MINIMAP_LAYOUTS,
   minimapNormalized,
@@ -121,7 +122,12 @@ export interface MinimapView {
 export interface MinimapOptions {
   readonly generation: GenerationId;
   readonly profile: HardwareGenerationProfile;
-  readonly state: RaceState;
+  readonly track: Track;
+  /**
+   * 世代の更新レートへ量子化済みの車。`RaceState.cars` をそのまま渡すと
+   * マーカーが 60Hz で動いてしまい、第1世代の 6Hz が出ない（`DisplayLatch` を通す）
+   */
+  readonly cars: readonly DisplayCar[];
   readonly rect: MinimapRect;
   /**
    * 量子化済みのフレーム番号。マーカーの登録順を毎フレーム巡回させるのに使う
@@ -131,7 +137,7 @@ export interface MinimapOptions {
   readonly layer?: number;
 }
 
-function markerColor(car: CarState, style: MarkerStyle): string {
+function markerColor(car: DisplayCar, style: MarkerStyle): string {
   if (car.entrant === PLAYER_ENTRANT) return style.playerColor;
   if (!style.useStandingColors) return style.rivalColor;
   const podium = STANDING_COLORS[car.standing - 1];
@@ -142,11 +148,14 @@ function markerColor(car: CarState, style: MarkerStyle): string {
  * 登録順を決める。自機を必ず先頭に置いて消えないようにし、
  * ライバルのマーカーはフレームごとに順序を巡回させる（実装計画 §3.6）。
  */
-function registrationOrder(state: RaceState, frameIndex: number): CarState[] {
-  const player = state.cars[PLAYER_ENTRANT];
-  const rivals = state.cars.filter((car) => car.entrant !== PLAYER_ENTRANT);
+function registrationOrder(
+  cars: readonly DisplayCar[],
+  frameIndex: number,
+): DisplayCar[] {
+  const player = cars.find((car) => car.entrant === PLAYER_ENTRANT);
+  const rivals = cars.filter((car) => car.entrant !== PLAYER_ENTRANT);
   const rotation = rivals.length > 0 ? frameIndex % rivals.length : 0;
-  const ordered: CarState[] = [];
+  const ordered: DisplayCar[] = [];
   if (player) ordered.push(player);
   for (let index = 0; index < rivals.length; index++) {
     ordered.push(rivals[(index + rotation) % rivals.length]!);
@@ -158,19 +167,19 @@ function registrationOrder(state: RaceState, frameIndex: number): CarState[] {
  * ミニマップを組み立てる。フレームへは積まない（テストが純関数として検査できる）。
  */
 export function buildMinimap(options: MinimapOptions): MinimapView {
-  const { generation, state, rect } = options;
+  const { generation, track, cars, rect } = options;
   const layout = generationValue(MINIMAP_LAYOUTS, generation);
   const style = generationValue(MARKER_STYLES, generation);
   const texture = generationValue(MINIMAP_TEXTURES, generation);
-  const projection = minimapProjection(state.track.bounds, rect, layout.margin);
+  const projection = minimapProjection(track.bounds, rect, layout.margin);
   const layer = options.layer ?? 40;
   const markerScale = Math.max(1, layout.markerSize * (rect.width / layout.size));
 
   const markers: MinimapMarker[] = [];
-  for (const car of registrationOrder(state, options.frameIndex ?? 0)) {
+  for (const car of registrationOrder(cars, options.frameIndex ?? 0)) {
     // ── 4 世代とも、ここが同じ 1 本の計算になっている
-    const world = state.track.toWorld(car.s, car.lateral);
-    const normalized = minimapNormalized(state.track.bounds, world[0], world[2]);
+    const world = track.toWorld(car.s, car.lateral);
+    const normalized = minimapNormalized(track.bounds, world[0], world[2]);
     const [x, y] = minimapPoint(projection, world[0], world[2]);
     const isPlayer = car.entrant === PLAYER_ENTRANT;
     markers.push({

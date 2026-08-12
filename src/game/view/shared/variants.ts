@@ -61,6 +61,27 @@ export const ENTRANT_COLORS: readonly string[] = [
 /** 自機のエントラント番号。シムとビューで共有する唯一の「特別扱い」。 */
 export const PLAYER_ENTRANT = 0;
 
+/**
+ * 3D の車体へ掛ける色。
+ *
+ * 車テクスチャは既に赤系のリバリーを持っているので、`ENTRANT_COLORS` をそのまま
+ * 乗算すると全車が濁った暗色になる（黄を掛けると青が落ちて赤が残るだけ）。
+ * 白へ寄せた淡い色を掛けて、リバリーを保ったまま見分けが付くようにする。
+ * 自機は素の色（白）で、いちばん素直に見える。
+ */
+export function carTintFor(entrant: number): string {
+  if (entrant === PLAYER_ENTRANT) return '#ffffff';
+  const base = ENTRANT_COLORS[entrant % ENTRANT_COLORS.length] ?? '#ffffff';
+  return mixTowardWhite(base, 0.62);
+}
+
+function mixTowardWhite(color: string, amount: number): string {
+  const value = Number.parseInt(color.slice(1), 16);
+  const channels = [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+  const mixed = channels.map((channel) => Math.round(channel + (255 - channel) * amount));
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export function profileOf(generation: GenerationId): HardwareGenerationProfile {
   return HARDWARE_GENERATION_PROFILES[generation];
 }

@@ -10,16 +10,16 @@ import { createRacingActionMap } from './input/bindings.js';
 import { stepRace } from './sim/race.js';
 import { createRaceState } from './sim/state.js';
 import type { VehicleControl } from './sim/vehicle.js';
-import { fullScreenMinimapRect, pushMinimap } from './view/shared/minimap.js';
-import { quantizedFrame } from './view/shared/quantize.js';
-import { SKY_COLORS, generationValue, profileOf } from './view/shared/variants.js';
+import { buildGenerationView } from './view/index.js';
+import { createDisplayLatch } from './view/shared/display-state.js';
+import { profileOf } from './view/shared/variants.js';
 
 /**
  * ゲームモジュール（実装計画 §2.4）。
  *
- * フェーズ 1 の時点では、シムの可視化はミニマップだけ。専用のデバッグ描画は作らず、
- * 本番のミニマップを画面いっぱいに出して 8 台の走りを確認する。
- * 以降のフェーズで各世代のビューを足し、ミニマップは右下へ縮小配置する。
+ * ここがやるのは 3 つだけ — 入力を取り、シムを 1 ティック進め、
+ * 描画する世代のぶんだけビューを呼ぶ。世代ごとの表現は `view/index.ts` の
+ * 割り当てテーブルの向こう側にある。
  */
 export const racingModule: GameModule = {
   id: 'console-chaos-racing',
@@ -27,6 +27,7 @@ export const racingModule: GameModule = {
     const actions = createRacingActionMap();
     // タイトル画面が入るまでは、起動直後から AI 8 台のレースを回す
     const race = createRaceState({ autoPilot: true });
+    const display = createDisplayLatch();
     let seconds = 0;
 
     return {
@@ -41,7 +42,7 @@ export const racingModule: GameModule = {
         if (input.genNext.pressed) context.generation.cycle(1);
         if (input.genPrev.pressed) context.generation.cycle(-1);
 
-        // 自機の操作。autoPilot が真の間は無視される
+        // 自機の操作。何か踏まれた時点でアトラクトデモを抜ける
         const control: VehicleControl = {
           steer: input.steer,
           throttle: input.throttle.value,
@@ -57,32 +58,16 @@ export const racingModule: GameModule = {
       buildRenderFrame(frame: RenderFrame) {
         frame.timeSeconds = seconds;
 
-        // フェーズ 1 のカメラは仮。世代別ビューが入るまでは何も映さない
-        frame.camera = {
-          projection: 'perspective',
-          position: [0, 2, 8],
-          target: [0, 2, 0],
-          zoom: 8,
-          fovDegrees: 60,
-        };
-
-        // 切替中は 2 世代ぶんのコマンドを積む。シムは 1 つのまま
+        // 切替中は 2 世代ぶんのコマンドを積む。シムは 1 つのまま。
+        // ラッチも世代ごとに持つので、それぞれが自分の更新レートで止まって見える
         for (const generation of context.generation.renderGenerations()) {
           const profile = profileOf(generation);
-          const sky = generationValue(SKY_COLORS, generation);
-
-          frame.backgrounds.push({
-            color: sky.bottom,
-            secondaryColor: sky.top,
-            generations: [generation],
-          });
-
-          pushMinimap(frame, {
+          buildGenerationView(frame, {
             generation,
             profile,
             state: race,
-            rect: fullScreenMinimapRect(profile),
-            frameIndex: quantizedFrame(seconds, profile),
+            display: display.sample(generation, profile, race, seconds),
+            seconds,
           });
         }
       },

@@ -131,8 +131,8 @@ function buildSector(lod, sector) {
         const b = previous + column + 1;
         const c = current + column + 1;
         const d = current + column;
-        // 進行方向から見て上を向くよう、反時計回りに張る
-        indices.push(a, d, c, a, c, b);
+        // 上から見て反時計回り ＝ 法線が +Y。裏面カリングに落ちないのはこの順だけ
+        indices.push(a, b, c, a, c, d);
       }
     }
   }

@@ -32,7 +32,7 @@ export interface TrackMeshLod {
 export const TRACK_MESH_LODS: GenerationVariant<TrackMeshLod | null> = defineGenerationVariant({
   FC: null,
   SFC: null,
-  PS1: { directory: 'gen3', sectorCount: 8, segmentsPerSector: 97, roadSpans: 4 },
+  PS1: { directory: 'gen3', sectorCount: 8, segmentsPerSector: 97, roadSpans: 6 },
   PS2: null,
 });
 

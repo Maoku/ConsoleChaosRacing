@@ -38,7 +38,8 @@ describe('ミニマップ', () => {
       const view = buildMinimap({
         generation,
         profile,
-        state,
+        track: state.track,
+        cars: state.cars,
         rect: defaultMinimapRect(generation, profile),
         frameIndex: 3,
       });
@@ -63,7 +64,7 @@ describe('ミニマップ', () => {
       for (const generation of GENERATION_IDS) {
         const profile = HARDWARE_GENERATION_PROFILES[generation];
         const rect = defaultMinimapRect(generation, profile);
-        const view = buildMinimap({ generation, profile, state, rect });
+        const view = buildMinimap({ generation, profile, track: state.track, cars: state.cars, rect });
 
         expect(view.markers).toHaveLength(ENTRANT_COUNT);
         expect(new Set(view.markers.map((marker) => marker.entrant)).size).toBe(ENTRANT_COUNT);
@@ -88,7 +89,7 @@ describe('ミニマップ', () => {
     const rect = defaultMinimapRect('FC', profile);
 
     const orderAt = (frameIndex: number): number[] =>
-      buildMinimap({ generation: 'FC', profile, state, rect, frameIndex }).markers.map(
+      buildMinimap({ generation: 'FC', profile, track: state.track, cars: state.cars, rect, frameIndex }).markers.map(
         (marker) => marker.entrant,
       );
 
@@ -126,7 +127,8 @@ describe('ミニマップ', () => {
     const view = buildMinimap({
       generation: 'FC',
       profile,
-      state,
+      track: state.track,
+      cars: state.cars,
       rect: defaultMinimapRect('FC', profile),
     });
     // 枠 1 枚 ＋ マーカー 8 枚。影も強調縁も置かない
@@ -147,7 +149,8 @@ describe('ミニマップ', () => {
       const view = buildMinimap({
         generation,
         profile,
-        state,
+        track: state.track,
+        cars: state.cars,
         rect: defaultMinimapRect(generation, profile),
       });
 
@@ -175,7 +178,8 @@ describe('ミニマップ', () => {
       const view = buildMinimap({
         generation,
         profile,
-        state,
+        track: state.track,
+        cars: state.cars,
         rect: defaultMinimapRect(generation, profile),
       });
       const blend = view.panelSprite.hardwareBlend;
@@ -234,13 +238,15 @@ describe('ミニマップ', () => {
     const small = buildMinimap({
       generation: 'PS2',
       profile,
-      state,
+      track: state.track,
+      cars: state.cars,
       rect: defaultMinimapRect('PS2', profile),
     });
     const large = buildMinimap({
       generation: 'PS2',
       profile,
-      state,
+      track: state.track,
+      cars: state.cars,
       rect: fullScreenMinimapRect(profile),
     });
     for (let index = 0; index < small.markers.length; index++) {
