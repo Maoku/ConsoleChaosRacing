@@ -1,14 +1,21 @@
+import {
+  defineGenerationVariant,
+  generationValue,
+  type GenerationId,
+  type GenerationVariant,
+} from '@console-chaos/engine';
+
 /**
- * 第1世代のラスターサーフェスが引く路面テクスチャの仕様（実装計画 §3.2 / §8）。
+ * 擬似3D世代（第1・第2）が引く路面テクスチャの仕様（実装計画 §3.2 / §3.3 / §8）。
  *
  * **`tools/build-road-texture.mjs` とビューが共有する。** 生成側と描画側で
  * 「テクスチャの何 % が路面か」がずれると路面幅がそのままずれるので、
  * 定義は必ずここ 1 か所に置く（`track-mesh.ts` と同じ方針）。
  *
- * ## なぜ同梱の `road.png` をそのまま使わないか
+ * ## なぜ同梱の `road.png` / `circuit.png` をそのまま使わないか
  *
- * エンジンは走査線の `width`（＝画面幅が覆うテクスチャの U 幅）を **(0, 1] に制限**する。
- * 距離 z の行の路面が画面に占める幅は
+ * 第1世代のエンジンは走査線の `width`（＝画面幅が覆うテクスチャの U 幅）を
+ * **(0, 1] に制限**する。距離 z の行の路面が画面に占める幅は
  *
  *     roadPx(z) = roadFraction * screenWidth / width(z)
  *
@@ -20,7 +27,12 @@
  * 実装計画 §8 のリスク表が挙げている対処（「`road.png` を横に広い版として再生成し
  * `TEX_W` を拡大する」）そのものであり、生成物はリポジトリにコミットする（§2.6）。
  *
- * ## 数値の決め方
+ * 第2世代のアフィン面には幅の制限が無いので、同じ理由では縛られない。それでも
+ * 同梱の `circuit.png` は使わない — 路面が幅の 51% を占めるうえ**草地に高周波の
+ * ディザ**が入っており、1 行が数十メートルを跨ぐ遠方でちらつくため。第2世代ぶんも
+ * 同じ生成器で焼き、色数（RGB555・同時 256 色）ぶんだけ階調を増やす。
+ *
+ * ## 数値の決め方（第1世代）
  *
  * `width(z) = screenWidth * z / (spanMeters * focal)` なので、1 本のサーフェスで
  * 覆える距離の比は `width` の可動域そのものになる。8bit 量子化の刻みが
@@ -32,6 +44,33 @@
  *
  * この 3 つが噛み合うよう `spanMeters` を 84 m に採った。詳細は `projection.ts`。
  */
+
+/** 路面から外側へ向かって並ぶ草地の帯。最後の 1 本は `width: Infinity` で締める */
+export interface GrassBand {
+  /** 帯の幅 [m] */
+  readonly width: number;
+  readonly color: string;
+}
+
+/**
+ * 路面テクスチャの色。
+ *
+ * **その世代のハードウェアが実際に出せる値そのものを置く。**
+ * 第1世代は 54 色マスターパレットの値（レンダラーは最近傍で丸めるので、外れた色は
+ * 隣の色と同じ枠に落ちて塗り分けが消える。実際、初版の砂色 `#a08050` は路面と同じ灰へ
+ * 落ちていた）。第2世代は RGB555 の格子＝**各チャンネル 8 の倍数**にする。
+ */
+export interface RoadSurfaceColors {
+  readonly asphalt: string;
+  /** 路肩寄りの摩耗した舗装。`wearWidth` が 0 の世代では使われない */
+  readonly asphaltWorn: string;
+  readonly line: string;
+  readonly kerbRed: string;
+  readonly kerbPale: string;
+  readonly runoff: string;
+  /** 路面から外側へ向かう草地の帯 */
+  readonly grass: readonly GrassBand[];
+}
 
 /** 路面テクスチャのレイアウト。単位はメートル（テクスチャ画素ではない） */
 export interface RoadSurfaceLayout {
@@ -49,8 +88,8 @@ export interface RoadSurfaceLayout {
   readonly kerbWidth: number;
   /** 縁石の外側の土のランオフの幅 [m] */
   readonly runoffWidth: number;
-  /** 草地の明暗が切り替わる、ランオフ外側からの距離 [m] */
-  readonly grassBandWidth: number;
+  /** 路肩側の舗装が摩耗している幅 [m]。0 なら一様な舗装 */
+  readonly wearWidth: number;
   /** センターライン／路肩線の幅 [m] */
   readonly lineWidth: number;
   /** 路肩線の位置（中心からの距離）[m] */
@@ -60,9 +99,10 @@ export interface RoadSurfaceLayout {
   readonly dashGapMeters: number;
   /** 縁石の縞 1 本の長さ [m] */
   readonly kerbStripeMeters: number;
+  readonly colors: RoadSurfaceColors;
 }
 
-export const ROAD_SURFACE: RoadSurfaceLayout = {
+const FC_ROAD: RoadSurfaceLayout = {
   texture: 'assets/gen1/road/road_wide.png',
   textureWidth: 1024,
   textureHeight: 256,
@@ -73,36 +113,99 @@ export const ROAD_SURFACE: RoadSurfaceLayout = {
   roadHalfWidth: 6,
   kerbWidth: 0.9,
   runoffWidth: 2,
-  grassBandWidth: 7,
+  wearWidth: 0,
   lineWidth: 0.36,
   edgeLineOffset: 5.6,
   dashMeters: 8,
   dashGapMeters: 16,
   kerbStripeMeters: 12,
+  colors: {
+    asphalt: '#545454',
+    asphaltWorn: '#545454',
+    line: '#eceeec',
+    kerbRed: '#982220',
+    kerbPale: '#eceeec',
+    runoff: '#783c00',
+    grass: [
+      { width: 7, color: '#287200' },
+      { width: Number.POSITIVE_INFINITY, color: '#083a00' },
+    ],
+  },
 };
+
+/**
+ * 第2世代のアフィン面が引く路面。
+ *
+ * 幅の制限が無いぶん `spanMeters` は「最遠の行で画面が覆う横幅」を上回るように採る
+ * （220 m 先で 256 px の画面が覆うのは 188 m）。こうしておけば `wrap: 'clamp'` で
+ * 端が草地へ伸び、**コーナーの先に二本目の道路が現れることが起こらない**。
+ *
+ * V の模様（破線・縁石の縞）は 24 m 周期で、テクスチャ 1 枚にちょうど 4 周期入る。
+ * この「4 周期ぶんの余白」が、走査線を傾けたとき V が端からはみ出さないための
+ * 遊びになる（`affine-surface.ts` の `patternPeriodMeters` を参照）。
+ */
+const SFC_ROAD: RoadSurfaceLayout = {
+  texture: 'assets/gen2/road/road_affine.png',
+  textureWidth: 1024,
+  textureHeight: 512,
+  spanMeters: 96,
+  periodMeters: 96,
+  roadHalfWidth: 6,
+  kerbWidth: 0.9,
+  runoffWidth: 2.4,
+  wearWidth: 0.55,
+  lineWidth: 0.36,
+  edgeLineOffset: 5.6,
+  dashMeters: 8,
+  dashGapMeters: 16,
+  kerbStripeMeters: 12,
+  colors: {
+    asphalt: '#505860',
+    asphaltWorn: '#606870',
+    line: '#f0f0e8',
+    kerbRed: '#c02828',
+    kerbPale: '#f0f0f0',
+    runoff: '#a08058',
+    grass: [
+      { width: 5, color: '#388830' },
+      { width: 10, color: '#287028' },
+      { width: Number.POSITIVE_INFINITY, color: '#185820' },
+    ],
+  },
+};
+
+/**
+ * 世代ごとの路面テクスチャ。第3・第4世代は 3D メッシュなので持たない。
+ * `null` を返す世代のビューは、そもそもこのモジュールを使わない。
+ */
+export const ROAD_SURFACES: GenerationVariant<RoadSurfaceLayout | null> = defineGenerationVariant({
+  FC: FC_ROAD,
+  SFC: SFC_ROAD,
+  PS1: null,
+  PS2: null,
+});
+
+export function roadSurfaceFor(generation: GenerationId): RoadSurfaceLayout | null {
+  return generationValue(ROAD_SURFACES, generation);
+}
 
 /**
  * 路面（舗装）がテクスチャ幅に占める割合。
  * ここが小さいほど遠くまで路面を細く描けるが、近景の拡大率が上がる。
  */
-export function roadFraction(layout: RoadSurfaceLayout = ROAD_SURFACE): number {
+export function roadFraction(layout: RoadSurfaceLayout): number {
   return (layout.roadHalfWidth * 2) / layout.spanMeters;
 }
 
 /**
- * 色（能力契約 §1.4）。
+ * V 方向の模様が繰り返す周期 [m]。
  *
- * **すべて第1世代の 54 色マスターパレットの値そのもの**にしてある。
- * レンダラーは最近傍で丸めるので、外れた色を置くと隣の色と同じ枠に落ちて
- * 塗り分けが消える（実際、初版の砂色 `#a08050` は路面と同じ灰へ落ちていた）。
- * 5 色しか使わないので、同時 25 色の予算にも遠く届かない。
+ * 破線と縁石の縞がどちらも同じ周期なら、テクスチャの V は**その周期ごとに同じ絵**になる。
+ * アフィン面はこの性質を使って、走査線の V 範囲をテクスチャの内側へ寄せる
+ * （`clamp` でも端が潰れないようにする）。周期が揃っていない場合は 1 枚ぶんを返す。
  */
-export const ROAD_COLORS = {
-  asphalt: '#545454',
-  line: '#eceeec',
-  kerbRed: '#982220',
-  kerbPale: '#eceeec',
-  runoff: '#783c00',
-  grassNear: '#287200',
-  grassFar: '#083a00',
-} as const;
+export function patternPeriodMeters(layout: RoadSurfaceLayout): number {
+  const dash = layout.dashMeters + layout.dashGapMeters;
+  const kerb = layout.kerbStripeMeters * 2;
+  return dash === kerb ? dash : layout.periodMeters;
+}

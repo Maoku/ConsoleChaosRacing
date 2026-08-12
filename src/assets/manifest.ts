@@ -10,7 +10,7 @@ import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
 } from '../game/view/shared/car-sprite.js';
-import { ROAD_SURFACE } from '../game/view/shared/road-surface.js';
+import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import {
   TRACK_MESH_LODS,
   trackSectorAsset,
@@ -41,6 +41,19 @@ const trackModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
   }));
 });
 
+/**
+ * 擬似3D世代の路面テクスチャ（生成物 / tools/build-road-texture.mjs）。
+ *
+ * `clamp` なのは、コーナーの先で路面が画面外へ流れたとき端の草地が伸びるようにするため。
+ * 第1世代は V を CPU 側で fract 済みなので縦の repeat も要らず、第2世代は
+ * テクスチャ 1 枚が最遠の行の画面幅より広いので、そもそも端まで届かない。
+ * 同梱の `road.png` / `circuit.png` を使わない理由は `road-surface.ts` の冒頭に書いた。
+ */
+const roadTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
+  const layout = ROAD_SURFACES[generation];
+  return layout ? [{ url: layout.texture, wrap: 'clamp' as const }] : [];
+});
+
 const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
   const lod = TRACK_MESH_LODS[generation];
   if (!lod) return [];
@@ -63,13 +76,8 @@ const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) 
 export const MANIFEST: RenderAssetManifest = {
   textures: [
     { url: 'assets/common/fallback.png', wrap: 'clamp' },
-    // 第1世代の路面（生成物 / tools/build-road-texture.mjs・フェーズ 3）。
-    // `clamp` なのは、コーナーの先で路面が画面外へ流れたとき端の草地が伸びるようにするため。
-    // V は CPU 側で fract 済みなので縦の repeat は要らない。
-    // 同梱の `road.png` を使わない理由は `view/shared/road-surface.ts` の冒頭に書いた
-    { url: ROAD_SURFACE.texture, wrap: 'clamp' },
+    ...roadTextures,
     { url: 'assets/gen1/backgrounds/coast.png', wrap: 'repeat' },
-    { url: 'assets/gen2/tiles/circuit.png', wrap: 'clamp' },
     { url: 'assets/gen2/backgrounds/coast.png', wrap: 'repeat' },
     // **メッシュが参照するテクスチャは必ず `flipY: false`。**
     // glTF の UV は v = 0 が画像の上端だが、レンダラーは `textures` を既定 `flipY: true` で

@@ -8,7 +8,7 @@ import {
   farRoadWidthPx,
   roadTopRowFor,
 } from '../src/game/view/shared/projection.js';
-import { ROAD_SURFACE, roadFraction } from '../src/game/view/shared/road-surface.js';
+import { roadFraction, roadSurfaceFor } from '../src/game/view/shared/road-surface.js';
 import { buildFrame, raceAfter } from './support/frame.js';
 
 /**
@@ -19,6 +19,7 @@ import { buildFrame, raceAfter } from './support/frame.js';
  */
 
 const PROFILE = HARDWARE_GENERATION_PROFILES.FC;
+const ROAD_SURFACE = roadSurfaceFor('FC')!;
 const RESOLUTION: readonly [number, number] = [
   PROFILE.video.internalWidth,
   PROFILE.video.internalHeight,
@@ -70,7 +71,7 @@ describe('第1世代のラスターサーフェス', () => {
     expect(top + height).toBe(PROFILE.video.internalHeight);
     expect(top).toBeGreaterThan(FC_CAMERA.horizonRow);
     // 上端行は「width が 1 を超えない最初の行」。設計値と実装値がずれていないこと
-    expect(top).toBe(roadTopRowFor(PROFILE, FC_CAMERA));
+    expect(top).toBe(roadTopRowFor(PROFILE, FC_CAMERA, ROAD_SURFACE));
     expect(FC_CAMERA.roadTopRow).toBe(top);
   });
 
@@ -86,8 +87,8 @@ describe('第1世代のラスターサーフェス', () => {
   it('最遠の路面が画面幅の 2 割以下まで細くなる', () => {
     // エンジンは width ≤ 1 を強制するため、路面は roadFraction × 画面幅 より細くならない。
     // 同梱の road.png（路面が 44.5%）では 114 px で止まり「奥に進む」感が出ない
-    const farPx = farRoadWidthPx(PROFILE);
-    expect(roadFraction()).toBeCloseTo(12 / ROAD_SURFACE.spanMeters, 6);
+    const farPx = farRoadWidthPx(PROFILE, ROAD_SURFACE);
+    expect(roadFraction(ROAD_SURFACE)).toBeCloseTo(12 / ROAD_SURFACE.spanMeters, 6);
     expect(farPx).toBeLessThanOrEqual(PROFILE.video.internalWidth * 0.2);
   });
 
@@ -122,6 +123,7 @@ describe('第1世代のラスターサーフェス', () => {
         profile: PROFILE,
         camera: FC_CAMERA,
         track: TRACK,
+        layout: ROAD_SURFACE,
         car: { ...player, s: TRACK.wrapS(player.s + speedS) },
       });
 

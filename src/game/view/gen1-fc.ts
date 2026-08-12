@@ -20,7 +20,7 @@ import {
 } from './shared/car-sprite.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { FC_CAMERA, createRoadView } from './shared/projection.js';
-import { ROAD_SURFACE } from './shared/road-surface.js';
+import { roadSurfaceFor } from './shared/road-surface.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue } from './shared/variants.js';
 
 /**
@@ -75,10 +75,11 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   const { generation, profile, state, display } = context;
   const track = state.track;
   const atlas = carSpriteAtlasFor(generation);
+  const layout = roadSurfaceFor(generation);
   const player = display.cars[PLAYER_ENTRANT];
-  if (!atlas || !player) return;
+  if (!atlas || !layout || !player) return;
 
-  const view = createRoadView({ profile, camera: FC_CAMERA, track, car: player });
+  const view = createRoadView({ profile, camera: FC_CAMERA, track, car: player, layout });
   const origin = track.sampleAt(player.s);
 
   // ── 空と遠景。自機の向きで視差が付き、前方の勾配で地平線が上下する
@@ -186,7 +187,7 @@ function buildRoadSurface(
 
   return {
     id: `road-${generation}`,
-    texture: ROAD_SURFACE.texture,
+    texture: view.layout.texture,
     screenRect: [0, top, view.screenWidth, rows],
     scanlines,
     generations: [generation],
