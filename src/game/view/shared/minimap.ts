@@ -117,6 +117,12 @@ export interface MinimapView {
   readonly panelSprite: SpriteCommand;
   /** 登録順のマーカースプライト（影・強調縁を含む） */
   readonly markerSprites: readonly SpriteCommand[];
+  /**
+   * `markers` と 1:1 で並ぶ、そのマーカーを構成するスプライト（影・縁を含む）。
+   * 第1世代は走査線制限でマーカーを 1 つずつ落とす必要があるため、
+   * 「どのスプライトがどの車のものか」を平坦な配列とは別に保つ。
+   */
+  readonly markerSpriteGroups: readonly (readonly SpriteCommand[])[];
 }
 
 export interface MinimapOptions {
@@ -207,10 +213,12 @@ export function buildMinimap(options: MinimapOptions): MinimapView {
     generations: [generation],
   };
 
-  const markerSprites: SpriteCommand[] = [];
+  const markerSpriteGroups: SpriteCommand[][] = [];
   for (const marker of markers) {
     const [x, y] = marker.position;
     const cell = marker.isPlayer ? MARKER_CELL.player : MARKER_CELL.rival;
+    const markerSprites: SpriteCommand[] = [];
+    markerSpriteGroups.push(markerSprites);
     if (style.playerRing && marker.isPlayer) {
       markerSprites.push({
         id: `minimap-ring-${generation}`,
@@ -254,7 +262,15 @@ export function buildMinimap(options: MinimapOptions): MinimapView {
     });
   }
 
-  return { layout, projection, rect, markers, panelSprite, markerSprites };
+  return {
+    layout,
+    projection,
+    rect,
+    markers,
+    panelSprite,
+    markerSprites: markerSpriteGroups.flat(),
+    markerSpriteGroups,
+  };
 }
 
 /** 組み立てた結果をフレームへ積む。積んだ順がそのまま重ね順になる */

@@ -7,6 +7,11 @@ import {
 
 import { CAR_MODELS, carTextureFor } from '../game/view/shared/car-model.js';
 import {
+  CAR_SPRITE_GEOMETRY,
+  CAR_SPRITE_SOURCES,
+} from '../game/view/shared/car-sprite.js';
+import { ROAD_SURFACE } from '../game/view/shared/road-surface.js';
+import {
   TRACK_MESH_LODS,
   trackSectorAsset,
   trackSurfaceTexture,
@@ -58,7 +63,11 @@ const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) 
 export const MANIFEST: RenderAssetManifest = {
   textures: [
     { url: 'assets/common/fallback.png', wrap: 'clamp' },
-    { url: 'assets/gen1/road/road.png', wrap: 'clamp' }, // V は CPU 側で fract 済み
+    // 第1世代の路面（生成物 / tools/build-road-texture.mjs・フェーズ 3）。
+    // `clamp` なのは、コーナーの先で路面が画面外へ流れたとき端の草地が伸びるようにするため。
+    // V は CPU 側で fract 済みなので縦の repeat は要らない。
+    // 同梱の `road.png` を使わない理由は `view/shared/road-surface.ts` の冒頭に書いた
+    { url: ROAD_SURFACE.texture, wrap: 'clamp' },
     { url: 'assets/gen1/backgrounds/coast.png', wrap: 'repeat' },
     { url: 'assets/gen2/tiles/circuit.png', wrap: 'clamp' },
     { url: 'assets/gen2/backgrounds/coast.png', wrap: 'repeat' },
@@ -71,8 +80,13 @@ export const MANIFEST: RenderAssetManifest = {
     ...trackTextures,
   ],
   atlases: [
-    { url: 'assets/gen1/sprites/cars.png', columns: 3, rows: 2 },
-    { url: 'assets/gen2/sprites/cars.png', columns: 3, rows: 2 },
+    // 生成物（tools/build-car-sprites.mjs・フェーズ 3）。同梱の cars.png は
+    // 絵がセル境界をはみ出しており、正面のセルに隣の車が写り込む
+    ...CAR_SPRITE_SOURCES.map((source) => ({
+      url: source.to,
+      columns: CAR_SPRITE_GEOMETRY.columns,
+      rows: CAR_SPRITE_GEOMETRY.rows,
+    })),
     // 生成物（tools/build-minimap.mjs・フェーズ 1）
     { url: 'assets/common/markers.png', columns: 2, rows: 1 }, // 丸 / 四角。色は SpriteCommand.color
     { url: 'assets/gen1/hud/minimap.png', columns: 1, rows: 1 },

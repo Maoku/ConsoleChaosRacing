@@ -6,6 +6,7 @@ import {
 } from '@console-chaos/engine';
 
 import type { ViewBuilder, ViewContext } from './context.js';
+import { buildGen1View } from './gen1-fc.js';
 import { buildGen3View } from './gen3-ps1.js';
 import { buildPlaceholderView } from './placeholder.js';
 
@@ -20,7 +21,7 @@ import { buildPlaceholderView } from './placeholder.js';
  * フェーズが進むたびにここを 1 行ずつ差し替えていく。
  */
 const VIEWS: GenerationVariant<ViewBuilder> = defineGenerationVariant({
-  FC: buildPlaceholderView, // フェーズ 3 で view/gen1-fc.ts へ
+  FC: buildGen1View,
   SFC: buildPlaceholderView, // フェーズ 4 で view/gen2-sfc.ts へ
   PS1: buildGen3View,
   PS2: buildPlaceholderView, // フェーズ 5 で view/gen4-ps2.ts へ
