@@ -8,6 +8,7 @@
 - 更新: 2026-08-12（エンジン導入完了・更新版 README を反映・`car-conversion.json` のパス修正を反映・§9 の決定事項 6 項目を反映）
 - 更新: 2026-08-12（フェーズ 0・1 の実装完了を反映。**エンジン 0.2.0 への更新を反映** — スプライトのシーン統合・`HardwareBlendCommand`・第3世代の 12 スロット ordering table）
 - 更新: 2026-08-12（フェーズ 3 の実装完了を反映 — 走査線 `width ≤ 1` が「路面が細くなれる限界」も決めること・`BackgroundCommand.parallax` が読まれないこと・生成アセットの色はマスターパレットに載せること）
+- 更新: 2026-08-13（フェーズ 4 の実装完了を反映 — 第2世代の**半透明スプライトだけがシーンへ直接合成される**こと・`AffineSurfaceCommand` に明るさの項が無いこと・アフィン面の `wrap` と V の扱い）
 
 ---
 
@@ -72,6 +73,9 @@
 | `SpriteCommand` は **後に積んだものが手前**に描かれる | 実機の OAM は「番号が若いほど優先度が高く、かつ手前」なので、走査線制限の登録順とは**逆順に積む**（§3.2） |
 | FC の 54 色マスターパレットへの丸めは**最近傍**（`nearestMasterIndex`） | 生成アセットの色はパレットの値そのものを置く。外れた色は隣へ落ち、塗り分けが消える（§3.2） |
 | `AffineSurfaceCommand` には幅の制限が無い | 第2世代は描画距離を伸ばせる |
+| `AffineSurfaceCommand` は `uvOrigin + uvStepX·x + uvStepY·y` を引くだけで、**明るさもフォグも持たない**（ラスターの `brightness` に当たる項が無い） | 第2世代の遠方の霞は路面の上に重ねて作るしかない（§3.3） |
+| 第2世代の**`hardwareBlend` を持つスプライトだけはシーンへ直接描かれる**。不透明スプライトは独立面へ描かれ、`sprite.a ≥ 0.5` のしきい値で上書き合成される（実測） | 落ち影とフォグは路面と本当に混ざる。半透明スプライトは必ず不透明スプライトより奥になる |
+| 走査線ごとのアフィン面は**全画面三角形＋discard**で描かれる（1 帯 = 1 ドローコール） | 135 本でも GPU 側は軽いが、コマンド数は帯の粒度でそのまま増える |
 | 音声は `createGenerationAudioService` が `profile.audio.synth` ごとに音源を登録し、`GameHost` が世代切替時に自動で差し替える。`MusicClock` により**位相は保たれる** | 曲データは 1 つ。編曲だけ `useScore` で差し替える |
 | 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3 |
 | `@console-chaos/engine-testkit` は同梱されていない（0.2.0 でも tarball には含まれない） | テストは自前の手動ループホストか、純ロジックのみを対象にする |
@@ -286,12 +290,13 @@ Docs/
 | 生成物 | ツール | 用途 | フェーズ |
 | --- | --- | --- | --- |
 | `public/assets/gen{1,2,3,4}/hud/minimap.png` | `build-minimap.mjs` | ミニマップの俯瞰図（56² / 72² / 88² / 176²） | 1 |
-| `public/assets/common/markers.png` | `build-minimap.mjs` | 車マーカー（8×8 の丸・四角の 2 セル） | 1 |
+| `public/assets/common/markers.png` | `build-minimap.mjs` | 車マーカーと共通の形（8×8 の丸・四角・塗りつぶしの 3 セル）。**スプライトはアトラス経由でしか描けない**ので、単色の帯もここを通る | 1 / 4 |
 | `public/assets/gen3/models/track.glb` | `build-track-mesh.mjs` | 第3世代コース（4 m 刻み） | 2 |
 | `public/assets/gen4/models/track.glb` | `build-track-mesh.mjs` | 第4世代コース（1 m 刻み） | 5 |
 | `public/assets/gen{3,4}/textures/track_surface.png` | 同上 | 路面・縁石・草地を 1 枚に収めたアトラス | 2 / 5 |
 | `public/assets/gen{3,4}/textures/car_paint.png` | `build-car-paint.mjs` | 無彩色の塗装テクスチャ（256² / 512²）。車体色は実行時の乗算で決まる | 2 |
 | `public/assets/gen1/road/road_wide.png` | `build-road-texture.mjs` | 第1世代のラスター路面（1024×256 / 横 84 m・縦 96 m）。同梱の `road.png` では描画距離が伸びない（§3.2） | 3 |
+| `public/assets/gen2/road/road_affine.png` | 同上 | 第2世代のアフィン路面（1024×512 / 横 96 m・縦 96 m）。同梱の `circuit.png` は草地のディザが遠方でちらつく（§3.3） | 4 |
 | `public/assets/gen{1,2}/sprites/car_frames.png` | `build-car-sprites.mjs` | 車スプライトの整形（384×256 / 3×2）。同梱の `cars.png` は絵がセル境界をはみ出している（§3.2） | 3 |
 | `public/assets/common/font.png` | `build-font-atlas.mjs` | HUD（8×8 / 16×6） | 7 |
 | `public/assets/common/logo.png` | `build-title-logo.mjs` | タイトルロゴ | 7 |
@@ -425,24 +430,29 @@ roadPx(z) = roadFraction * W / widthU(z)      roadFraction = 路面がテクス�
 
 アフィン変換は 1 枚では透視にならないため、**走査線ごとに `AffineSurfaceCommand` を 1 枚ずつ積む**（実機の HDMA によるパラメータ書き換えと同じ構造）。
 
-行 `y` について `screenRect = [0, y, 256, 1]`:
+行 `y` について `screenRect = [0, y, 256, 1]`。**投影は第1世代とまったく同じ `RoadView`** から引く（`projection.ts`）。違うのは、ラスターが 4 つのスカラーを書くのに対し、アフィンは 2 次元のステップを書くことだけである。
 
 ```
-z        = camY * focal / (y - yH)
-scaleU   = z / (focal * TEX_W)                 // 画面 1px あたりの U 進み
-uvOrigin = [ 0.5 + (off(z) - (W/2) * z / focal) / TEX_W , fract((s0 + z) / TEX_L) ]
-uvStepX  = [ scaleU, 0 ]
-uvStepY  = [ 0, 0 ]                            // 高さ 1px なので不要
-wrap     = 'clamp'                             // V は CPU 側で fract 済み
+z       = camY * focal / (y - yH)
+φ       = 前方 z の路面の向きと視線の符号付き角度（clamp 済み）
+mpp     = z / focal                             // 画面 1px あたりの横移動 [m]
+uvStepX = [ cos φ * mpp / TEX_W , sin φ * mpp / TEX_L ]
+uvOrigin= [ uCenter(z) - (W/2) * uvStepX[0] , vPhase(z) - (W/2) * uvStepX[1] ]
+uvStepY = [ 0, 0 ]                              // 帯の中は 1 つの z で通す
+wrap    = 'clamp'
 ```
 
-車の向き（`heading`）による回転は `uvStepX` に回転成分を入れて表現する（`uvStepX = [scaleU*cos, scaleU*sin]`）。カーブでの視界の傾きが出る。
+画面を右へ 1 px 進むのは路面上を `z/focal` メートル横へ動くこと。前方の路面が視線から φ 回っていれば、その横移動は路面の座標系で `cos φ`（横）と `sin φ`（進行方向）に分解される — **`uvStepX` の V 成分がそのままコーナーでの視界の傾き**になる（実装で確定）。φ はヘッディングの引き算ではなく接線どうしの内積・外積から `atan2` で求める（引き算だと ±π を跨ぐ 1 か所だけ視界が跳ねる）。効きは 0.7 倍・上限 0.3 rad に抑える。素の角度を使うとヘアピンで 90° 近く回り、遠方の行が路面のはるか先を引く。
 
-- **帯の粒度**: まずは 1 行 = 1 サーフェスで実装する（路面帯 ≒ 120 行 ⇒ 120 ドローコール）。フレーム時間が予算（§6.3）を超えたら 2 行 / 4 行の帯に落とす。粒度は定数 1 つで切り替えられるようにしておく。
-- **描画距離**: 幅の制限が無いので 200 m 以上まで伸ばせる。遠方は `BackgroundCommand.fogDensity` と `brightness` で海の色へ溶かす。
-- **遠景**: 第1世代と同じ `coast.png`（SFC 版）だが、色数と `parallax` の段数を増やす。
-- **車**: 32 スプライト/走査線なので制限は実質かからない。半透明は RGB555 の color math（`{ family: 'gen2-color-math', operation: 'add', half: true }` ＝ 実機の 50% 重ね）で出し、**落ち影**をそれで置く。ステアフレームは 12Hz 量子化。
-- **能力契約**: `tileSnap: 1` なので座標を丸めない（FC との差がそのまま「滑らかさ」の差になる）。`paletteBlockSize: 8`、`maxSimultaneousColors: 256`、`translucency: color-math`。
+**`wrap` は `clamp`**（実装で確定）。`repeat` にすると、コーナーの先で U が範囲を出たときに**二本目の道路**が画面の端に現れる。ただし clamp は V にも掛かるので、傾けた行の V が端を越えると模様が潰れる。路面テクスチャの V 方向の模様（破線・縁石の縞）は 24 m 周期で 1 枚に 4 周期入れてあり、**V を 1 周期単位でずらしても絵が変わらない**。この性質で行の V 範囲をテクスチャ中央へ寄せ、端に当たらないようにする（`affine-surface.ts`）。
+
+- **投影パラメータ**: `focal = 300`・`camY = 3.4 m`・`yH = 84`・`yTop = 89`・カメラは自機の後方 9.0 m。幅の制限から解放されたぶん**カメラを下げ（4.0 → 3.4 m）、描画距離を伸ばす（98 → 220 m）**。この 2 つが第1世代との見た目の差の大半を作る。
+- **帯の粒度**: 1 行 = 1 サーフェス（路面帯 135 行 ⇒ 135 ドローコール。予算 240 の内側）。切替演出中は 2 世代ぶんを積むので 2 行へ落とす（`affineBandRows(renderedGenerations)`）。粒度は定数 1 つ。
+- **路面テクスチャ**: 同梱の `circuit.png` は使わず `tools/build-road-texture.mjs` で焼く（実装で確定）。理由は路面が幅の 51% を占めることと、**草地の高周波ディザが遠方でちらつく**こと。`TEX_W = 96 m`・`TEX_L = 96 m`・1024×512。96 m は最遠の行（220 m）で画面が覆う 188 m を上回るので、clamp の端が必ず草地になる。色は RGB555 の格子（各チャンネル 8 の倍数）に載せる。
+- **遠方の霞**: `AffineSurfaceCommand` には明るさの項が無いので、**上から重ねて作る**（実装で確定）。color math の half は「半分だけ混ぜる」しか出せないため、距離ごとに帯（スクリーン空間スプライト）を重ねて `1 - 0.5^k` の段階を作る。手前の帯ほど路面に近い固定色にしておかないと、40 m 先が一段で白む。第2世代の半透明スプライトはシーンへ直接描かれるので、これは路面と本当に混ざる。
+- **遠景**: 第1世代と同じ `backdrop.ts` を通す（`coast.png` の SFC 版）。`parallax` が読まれないのも同じなので、視差は `offset` へ畳み込む。
+- **車**: 32 スプライト/走査線なので制限は実質かからないが、経路は第1世代と同じ `sprite-plane.ts` を通す。**落ち影**は color math の `subtract` + `half`（背面を半分に落として影の色を引く ＝ 実機の作法）。ステアフレームは 12Hz 量子化。フォグが 8 割を超える 150 m より奥のライバルは描かない（霞の向こうに点が残る）。
+- **能力契約**: `tileSnap: 1` は「丸めない」ではなく**「1 px 単位」**（実装で確定。実機の OAM も整数画素だった）。第1世代との差は 8 px のタイル境界から自由になることにある。`paletteBlockSize: 8`、`maxSimultaneousColors: 256`、`translucency: color-math`。
 
 > README も「地面・道路・床は `AffineSurfaceCommand` の UV origin と X/Y step で 1 枚の texture を変形する `affinePlane` pass が中心。これは 3D mesh ではなく screen-space の疑似3D」と述べており、本節の走査線単位アフィンはその延長にある。
 
@@ -802,13 +812,19 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
   - ミニマップのマーカー（2×2 px・白/灰）が白い輪郭線に紛れる。FC の 2 色制約の中で読ませる方法は要検討
 - **なぜここか**: 4 世代で最も調整量が多く、リスクが高い。早く着手して改善の時間を確保する
 
-### フェーズ 4 — 第2世代（SFC）
+### フェーズ 4 — 第2世代（SFC）✅ 実装済み
 
-- `view/gen2-sfc.ts`（per-scanline アフィン、回転、フォグ、落ち影、12Hz 量子化）
-- ミニマップの SFC variant（半透明パネル、影付きマーカー）
-- `affine-surface.spec.ts`、帯粒度のフォールバック実装
+- `tools/build-road-texture.mjs` を世代テーブル化し、アフィン用の路面テクスチャを追加生成
+- `view/shared/affine-surface.ts`（走査線ごとのアフィン、傾き、帯粒度）
+- `view/gen2-sfc.ts`（フォグの帯、落ち影、12Hz 量子化）
+- `view/shared/sprite-plane.ts` — 走査線制限・重ね順・BG 相当の扱いを第1世代と共通化
+- ミニマップの SFC variant（半透明パネル、影付きマーカー）はフェーズ 1 の実装がそのまま効く
+- `affine-surface.spec.ts`、帯粒度のフォールバック（切替演出中は 2 行）
 - **完了条件**: §6.1 の第2世代基準 1–5 を満たす
 - フェーズ 3 の `projection.ts` をそのまま使うため実装量は小さい
+- **残件**（フェーズ 8 で扱う）:
+  - 基準 4 の実測 — 実画面の色数カウント（第1世代との差が数値で出るか）
+  - フォグの帯は 50% の段階しか作れないため、最も手前の段の境目が横線として見える可能性がある。実画面で確認し、必要なら段を増やすか距離を調整する
 
 ### フェーズ 5 — 第4世代（PS2）
 
@@ -853,8 +869,8 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | リスク | 影響 | 対策 |
 | --- | --- | --- |
 | ~~第1世代の描画距離が短く「奥に進む」感が出ない~~ | ~~要求未達~~ | **フェーズ 3 で発生し、対処済み。** `widthU ≤ 1` は描画距離だけでなく「路面が細くなれる限界」（`roadFraction × 画面幅`）も決めるため、`road.png` のままでは `focal` をいくら動かしても路面が画面の 45% より細くならない。`tools/build-road-texture.mjs` で `TEX_W = 84 m`・`roadFraction = 1/7` の版を生成し、最遠 37 px まで収束させた（§3.2） |
-| 第2世代の per-scanline アフィンが 120 ドローコールで重い | フレーム落ち | 帯粒度を定数化し 2 行 / 4 行へ落とせるようにする。GPU 側は全画面三角形 1 枚なので帯化の効果は大きい |
-| `circuit.png` が直線路タイルのため Mode 7 らしい「マップの回転」が出ない | 第2世代の説得力不足 | `uvStepX` の回転成分で視界の傾きを出す。不足ならコースマップ PNG を生成して切り替える（§3.3 の改善案） |
+| 第2世代の per-scanline アフィンが 120 ドローコールで重い | フレーム落ち | **フェーズ 4 で 135 本になった**（予算 240 の内側）。帯粒度は定数 1 つで、切替演出中は 2 行へ落とす。GPU 側は全画面三角形 1 枚なので帯化の効果は大きい |
+| ~~`circuit.png` が直線路タイルのため Mode 7 らしい「マップの回転」が出ない~~ | ~~第2世代の説得力不足~~ | **フェーズ 4 で対処済み。** `circuit.png` は使わず、路面テクスチャを `TEX_W = 96 m` で焼き直した（草地のディザが遠方でちらつくのが直接の理由）。視界の傾きは `uvStepX` の V 成分で出している。なおコースマップ全体の回転（真の Mode 7）はこの構成では出ない — 必要になればマップ参照へ切り替える（§3.3 の改善案は残す） |
 | PS1 に深度バッファが無く車がコースに埋まる | 破綻 | コースをセクター分割し、`polygonSort` と `polygonSortRange` を設定。自機は `orderTableIndex: 9` の固定スロットへ置き、路面の partition 範囲より常に後で描く（0.2.0 の修正で推奨された組み合わせ） |
 | `OverlayCommand` が WebGL で描かれない | HUD が出ない | フォントアトラス方式で解決済み（§3.5）。スクリーン空間スプライトは 0.2.0 で 4 世代すべてに描かれる。フェーズ 7 の前提として `build-font-atlas.mjs` を先に用意する |
 | `MeshCommand.material` 欠落で実行時例外 | クラッシュ | `frame-contract.spec.ts` で全コマンドを走査して事前検出 |
