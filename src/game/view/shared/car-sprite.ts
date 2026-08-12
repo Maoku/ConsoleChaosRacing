@@ -135,6 +135,11 @@ export interface CarPlacementOptions {
   readonly atlas: CarSpriteAtlas;
   /** これより近い車は描かない [m]。路面帯の下端より手前は画面に無い */
   readonly nearClip?: number;
+  /**
+   * これより遠い車は描かない [m]。既定は描画距離そのもの。
+   * 遠方をフォグで潰す世代では、霞の向こうに点が残らないよう手前で切る。
+   */
+  readonly farClip?: number;
 }
 
 /**
@@ -178,12 +183,13 @@ export function rivalPlacements(
 ): CarSpritePlacement[] {
   const { view, track } = options;
   const nearClip = options.nearClip ?? view.camera.behind * 0.6;
+  const farClip = options.farClip ?? view.maxDistance;
   const placements: CarSpritePlacement[] = [];
 
   for (const car of cars) {
     if (car.entrant === origin.entrant) continue;
     const distance = track.deltaS(car.s, view.originS);
-    if (distance < nearClip || distance > view.maxDistance) continue;
+    if (distance < nearClip || distance > farClip) continue;
     placements.push(place(options, car, distance, false));
   }
 

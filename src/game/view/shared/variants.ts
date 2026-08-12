@@ -68,6 +68,20 @@ export const ENTRANT_COLORS: readonly string[] = [
 /** 自機のエントラント番号。シムとビューで共有する唯一の「特別扱い」。 */
 export const PLAYER_ENTRANT = 0;
 
+/**
+ * `'#rrggbb'` → 0..1 の三つ組。
+ *
+ * コマンドの色は文字列で書けるが、`HardwareBlendCommand` の `fixedColor`
+ * （第2世代の固定色 color math）だけは 0..1 の数値で渡す決まりになっている。
+ */
+export function rgb01(hex: string): [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16) / 255,
+    Number.parseInt(hex.slice(3, 5), 16) / 255,
+    Number.parseInt(hex.slice(5, 7), 16) / 255,
+  ];
+}
+
 export function profileOf(generation: GenerationId): HardwareGenerationProfile {
   return HARDWARE_GENERATION_PROFILES[generation];
 }

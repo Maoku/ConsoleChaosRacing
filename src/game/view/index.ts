@@ -7,6 +7,7 @@ import {
 
 import type { ViewBuilder, ViewContext } from './context.js';
 import { buildGen1View } from './gen1-fc.js';
+import { buildGen2View } from './gen2-sfc.js';
 import { buildGen3View } from './gen3-ps1.js';
 import { buildPlaceholderView } from './placeholder.js';
 
@@ -22,7 +23,7 @@ import { buildPlaceholderView } from './placeholder.js';
  */
 const VIEWS: GenerationVariant<ViewBuilder> = defineGenerationVariant({
   FC: buildGen1View,
-  SFC: buildPlaceholderView, // フェーズ 4 で view/gen2-sfc.ts へ
+  SFC: buildGen2View,
   PS1: buildGen3View,
   PS2: buildPlaceholderView, // フェーズ 5 で view/gen4-ps2.ts へ
 });

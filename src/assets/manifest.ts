@@ -10,6 +10,7 @@ import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
 } from '../game/view/shared/car-sprite.js';
+import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import {
   TRACK_MESH_LODS,
@@ -95,8 +96,9 @@ export const MANIFEST: RenderAssetManifest = {
       columns: CAR_SPRITE_GEOMETRY.columns,
       rows: CAR_SPRITE_GEOMETRY.rows,
     })),
-    // 生成物（tools/build-minimap.mjs・フェーズ 1）
-    { url: 'assets/common/markers.png', columns: 2, rows: 1 }, // 丸 / 四角。色は SpriteCommand.color
+    // 生成物（tools/build-minimap.mjs・フェーズ 1）。
+    // 丸 / 四角 / 塗りつぶし。色は SpriteCommand.color で付ける
+    { url: MARKER_ATLAS.url, columns: MARKER_ATLAS.columns, rows: MARKER_ATLAS.rows },
     { url: 'assets/gen1/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen2/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen3/hud/minimap.png', columns: 1, rows: 1 },

@@ -1,11 +1,9 @@
 import {
   NO_ENTITY,
-  applyScanlineLimit,
   createFlickerState,
   type Entity,
   type RasterSurfaceCommand,
   type RenderFrame,
-  type SpriteCommand,
 } from '@console-chaos/engine';
 
 import type { ViewContext } from './context.js';
@@ -21,6 +19,7 @@ import {
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { FC_CAMERA, createRoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
+import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue } from './shared/variants.js';
 
 /**
@@ -62,13 +61,6 @@ const flicker = createFlickerState();
 /** 直前のフレームで走査線制限に落ちたエントラント。テストと将来の当たり判定用 */
 export function culledEntrants(): ReadonlySet<Entity> {
   return flicker.state.culled;
-}
-
-interface SpriteEntry {
-  readonly entity: Entity;
-  readonly y: number;
-  readonly height: number;
-  readonly sprites: readonly SpriteCommand[];
 }
 
 export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
@@ -140,20 +132,14 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
     entries.push({ ...scanlineItem(sprite, atlas.rival, rival.entrant), sprites: [sprite] });
   }
 
-  const limited = applyScanlineLimit(
-    entries,
-    profile.video.spritesPerScanline,
-    profile.video.internalHeight,
-  );
-  flicker.commit(limited.culled);
-
-  // ── 積む順がそのまま重ね順（後に積んだものが手前）。実機の OAM は
-  // **番号が若いほど優先度が高く、かつ手前に出る**ので、登録順を逆に積む。
+  // 走査線制限・重ね順・BG 相当の扱いは `sprite-plane.ts` に集約してある。
   // ミニマップの枠だけは BG 相当なので制限の外に置き、最背面へ回す
-  frame.sprites.push(minimap.panelSprite);
-  for (let index = limited.visible.length - 1; index >= 0; index--) {
-    for (const sprite of limited.visible[index]!.sprites) frame.sprites.push(sprite);
-  }
+  const culled = pushSpritePlane(frame, {
+    profile,
+    entries,
+    background: [minimap.panelSprite],
+  });
+  flicker.commit(culled);
 }
 
 /**

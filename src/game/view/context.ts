@@ -21,6 +21,13 @@ export interface ViewContext {
   readonly display: DisplaySnapshot;
   /** 実時間の経過秒。量子化済みの時刻は `display.seconds` */
   readonly seconds: number;
+  /**
+   * このフレームで積む世代の数。切替演出中だけ 2 になる。
+   *
+   * 世代 ID の分岐には使わない。**負荷の予算**を知りたいビュー
+   * （走査線ごとにドローコールを出す第2世代）が帯の粒度を落とすのに使う。
+   */
+  readonly renderedGenerations: number;
 }
 
 export type ViewBuilder = (frame: RenderFrame, context: ViewContext) => void;

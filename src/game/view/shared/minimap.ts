@@ -11,6 +11,7 @@ import {
 import type { Track } from '../../sim/track.js';
 import type { DisplayCar } from './display-state.js';
 import {
+  MARKER_ATLAS,
   MINIMAP_LAYOUTS,
   minimapNormalized,
   minimapPoint,
@@ -42,9 +43,7 @@ const MINIMAP_TEXTURES: GenerationVariant<string> = defineGenerationVariant({
   PS2: 'assets/gen4/hud/minimap.png',
 });
 
-/** マーカーのアトラス。0 = 丸（ライバル）、1 = 四角（自機） */
-const MARKER_ATLAS = 'assets/common/markers.png';
-const MARKER_CELL = { rival: 0, player: 1 } as const;
+const MARKER_CELL = MARKER_ATLAS.cells;
 
 interface MarkerStyle {
   /** 順位に応じた色を使うか。偽なら自機／他車の 2 色だけ */
@@ -226,7 +225,7 @@ export function buildMinimap(options: MinimapOptions): MinimapView {
         position: [x, y, 0],
         size: [marker.size * 1.9, marker.size * 1.9],
         color: '#ffffff',
-        texture: MARKER_ATLAS,
+        texture: MARKER_ATLAS.url,
         cell: MARKER_CELL.rival,
         alphaCutoff: 0.5,
         layer: layer + 1,
@@ -240,7 +239,7 @@ export function buildMinimap(options: MinimapOptions): MinimapView {
         position: [x + 1, y + 1, 0],
         size: [marker.size, marker.size],
         color: '#101018',
-        texture: MARKER_ATLAS,
+        texture: MARKER_ATLAS.url,
         cell,
         alphaCutoff: 0.5,
         layer: layer + 1,
@@ -254,7 +253,7 @@ export function buildMinimap(options: MinimapOptions): MinimapView {
       position: [x, y, 0],
       size: [marker.size, marker.size],
       color: marker.color,
-      texture: MARKER_ATLAS,
+      texture: MARKER_ATLAS.url,
       cell,
       alphaCutoff: 0.5,
       layer: layer + 2,

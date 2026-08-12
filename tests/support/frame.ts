@@ -25,6 +25,7 @@ export function buildFrame(
   generation: GenerationId,
   state: RaceState,
   seconds = 10,
+  renderedGenerations = 1,
 ): RenderFrame {
   const profile = HARDWARE_GENERATION_PROFILES[generation];
   const frame = createRenderFrame();
@@ -35,6 +36,7 @@ export function buildFrame(
     state,
     display: latch.sample(generation, profile, state),
     seconds,
+    renderedGenerations,
   });
   return frame;
 }

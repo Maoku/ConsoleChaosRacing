@@ -14,6 +14,21 @@ import type { TrackBounds } from '../../sim/track.js';
  * 2 つがずれる余地が構造的に無い。
  */
 
+/**
+ * 共通の小さな形のアトラス（`tools/build-minimap.mjs` が生成する）。
+ *
+ * サイズはコマンド側で指定するので、この 1 枚で 4 世代・8 台のマーカーも、
+ * 落ち影も、画面を覆う帯も賄える。**スプライトはアトラス経由でしか描けない**
+ * （エンジンの制約）ため、単色の矩形を出したいだけの場所もここを通る。
+ */
+export const MARKER_ATLAS = {
+  url: 'assets/common/markers.png',
+  columns: 3,
+  rows: 1,
+  /** 丸（他車・落ち影）/ 四角（自機）/ 塗りつぶし（帯・パネル） */
+  cells: { rival: 0, player: 1, fill: 2 },
+} as const;
+
 export interface MinimapLayout {
   /** テクスチャの一辺 [px] */
   readonly size: number;

@@ -60,7 +60,8 @@ export const racingModule: GameModule = {
 
         // 切替中は 2 世代ぶんのコマンドを積む。シムは 1 つのまま。
         // ラッチも世代ごとに持つので、それぞれが自分の更新レートで止まって見える
-        for (const generation of context.generation.renderGenerations()) {
+        const generations = context.generation.renderGenerations();
+        for (const generation of generations) {
           const profile = profileOf(generation);
           buildGenerationView(frame, {
             generation,
@@ -68,6 +69,7 @@ export const racingModule: GameModule = {
             state: race,
             display: display.sample(generation, profile, race),
             seconds,
+            renderedGenerations: generations.length,
           });
         }
       },

@@ -18,6 +18,7 @@ import { GENERATION_IDS } from '@console-chaos/engine';
 
 import { TRACK } from '../src/game/sim/track.ts';
 import {
+  MARKER_ATLAS,
   MINIMAP_LAYOUTS,
   minimapPoint,
   minimapProjection,
@@ -88,12 +89,13 @@ function drawMinimap(generation) {
 }
 
 /**
- * 車マーカーのアトラス。8×8 の丸と四角を横に 2 セル並べる。
- * サイズはコマンド側で指定するので、この 1 枚で 4 世代・8 台すべてを賄える。
+ * 共通の形のアトラス。8×8 の丸・四角・塗りつぶしを横に 3 セル並べる。
+ * サイズはコマンド側で指定するので、この 1 枚で 4 世代・8 台のマーカーも、
+ * 落ち影も、画面を覆うフォグの帯も賄える。
  */
 function drawMarkers() {
   const cell = 8;
-  const raster = new Raster(cell * 2, cell);
+  const raster = new Raster(cell * MARKER_ATLAS.columns, cell);
 
   // セル 0: 丸（他車）
   for (let y = 0; y < cell; y++) {
@@ -106,7 +108,15 @@ function drawMarkers() {
   // セル 1: 四角（自機）。縁を 1 画素空けて、丸と大きさが揃って見えるようにする
   for (let y = 1; y < cell - 1; y++) {
     for (let x = 1; x < cell - 1; x++) {
-      raster.blend(cell + x, y, WHITE, 1);
+      raster.blend(cell * MARKER_ATLAS.cells.player + x, y, WHITE, 1);
+    }
+  }
+
+  // セル 2: 塗りつぶし。単色の矩形を出すためだけのセル（スプライトはアトラス経由でしか
+  // 描けないので、フォグの帯やパネルもこれを引き伸ばして出す）
+  for (let y = 0; y < cell; y++) {
+    for (let x = 0; x < cell; x++) {
+      raster.blend(cell * MARKER_ATLAS.cells.fill + x, y, WHITE, 1);
     }
   }
 
