@@ -37,13 +37,20 @@ export function safeAreaOf(profile: HardwareGenerationProfile) {
   };
 }
 
-/** 空と地平の色。世代が進むほど階調を増やす。 */
+/**
+ * 空と地平の色。世代が進むほど階調を増やす。
+ *
+ * 第4世代だけは**環境マップから実測した値**を置く（`tools/build-skyline.mjs` が
+ * 表示する）。空・遠景の帯・車への映り込みが 1 枚の絵から出ていることが
+ * §6.1 第4世代基準 2 の要求であり、色が食い違うと地平線で境目が見える。
+ * `gen4-environment.spec.ts` が環境マップと突き合わせて固定する。
+ */
 export const SKY_COLORS: GenerationVariant<{ top: string; bottom: string }> =
   defineGenerationVariant({
     FC: { top: '#5878f8', bottom: '#a4e4fc' },
     SFC: { top: '#3860c8', bottom: '#b8e8f8' },
     PS1: { top: '#20406c', bottom: '#88b4cc' },
-    PS2: { top: '#1c3a68', bottom: '#a8cfe4' },
+    PS2: { top: '#2c69cd', bottom: '#8abdcf' },
   });
 
 /**

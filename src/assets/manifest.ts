@@ -11,6 +11,7 @@ import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
 } from '../game/view/shared/car-sprite.js';
+import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import {
@@ -90,7 +91,11 @@ export const MANIFEST: RenderAssetManifest = {
     // 取り込む（アトラスだけは false を強制する）。指定を忘れると上下逆に貼られ、
     // 車体が迷彩柄のようになる。`frame-contract.spec.ts` がこの規約を検査する。
     ...carTextures,
-    { url: 'assets/gen4/environment/circuit.png', wrap: 'repeat' },
+    // 環境マップは映り込み（`equirectangularUv`）が v = 0 を真上とみなすので flipY: false。
+    // 遠景の層は逆に「絵は反転済み」を前提にしているので、同じ 1 枚は使えない。
+    // 地平線の帯を別ファイルへ焼き出してある（`shared/environment.ts` の表）
+    { url: ENVIRONMENT_MAP.url, wrap: 'repeat', flipY: false },
+    { url: SKYLINE.url, wrap: 'repeat' },
     ...trackTextures,
   ],
   atlases: [
