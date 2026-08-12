@@ -46,41 +46,27 @@ export const SKY_COLORS: GenerationVariant<{ top: string; bottom: string }> =
     PS2: { top: '#1c3a68', bottom: '#a8cfe4' },
   });
 
-/** 8 台の車体色。順位色ではなくエントラント固有色で、ミニマップと車体で共有する。 */
+/**
+ * 8 台のエントラント色。**色相を均等に散らしてある。**
+ *
+ * ミニマップのマーカーと 3D の車体リバリー（`tools/build-car-liveries.mjs`）が
+ * この 1 つの表を共有するので、マップ上の色と実車の色が必ず一致する。
+ * 近い色相を 2 つ置くと 320×240 では見分けが付かなくなるため、
+ * ここを触るときは色相の間隔を保つこと。
+ */
 export const ENTRANT_COLORS: readonly string[] = [
-  '#f8d800', // 0: 自機（黄）
-  '#e83820', // 1
-  '#3cbcfc', // 2
-  '#58d854', // 3
-  '#f878f8', // 4
-  '#fc9838', // 5
-  '#b8b8f8', // 6
-  '#a44810', // 7
+  '#f8d800', // 0: 自機（黄・色相 52°）
+  '#e83820', // 1: 赤 8°
+  '#fc9838', // 2: 橙 30°
+  '#58d854', // 3: 緑 118°
+  '#20c0a0', // 4: 青緑 168°
+  '#3cbcfc', // 5: 空 200°
+  '#6060f0', // 6: 青 240°
+  '#f878f8', // 7: 桃 300°
 ];
 
 /** 自機のエントラント番号。シムとビューで共有する唯一の「特別扱い」。 */
 export const PLAYER_ENTRANT = 0;
-
-/**
- * 3D の車体へ掛ける色。
- *
- * 車テクスチャは既に赤系のリバリーを持っているので、`ENTRANT_COLORS` をそのまま
- * 乗算すると全車が濁った暗色になる（黄を掛けると青が落ちて赤が残るだけ）。
- * 白へ寄せた淡い色を掛けて、リバリーを保ったまま見分けが付くようにする。
- * 自機は素の色（白）で、いちばん素直に見える。
- */
-export function carTintFor(entrant: number): string {
-  if (entrant === PLAYER_ENTRANT) return '#ffffff';
-  const base = ENTRANT_COLORS[entrant % ENTRANT_COLORS.length] ?? '#ffffff';
-  return mixTowardWhite(base, 0.62);
-}
-
-function mixTowardWhite(color: string, amount: number): string {
-  const value = Number.parseInt(color.slice(1), 16);
-  const channels = [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
-  const mixed = channels.map((channel) => Math.round(channel + (255 - channel) * amount));
-  return `#${mixed.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
-}
 
 export function profileOf(generation: GenerationId): HardwareGenerationProfile {
   return HARDWARE_GENERATION_PROFILES[generation];

@@ -41,6 +41,53 @@ export function carModelFor(generation: GenerationId): CarModel | null {
 }
 
 /**
+ * エントラントごとの塗り分け（リバリー）の設定。
+ *
+ * 車テクスチャには赤いリバリーが焼き込まれているので、`MeshCommand.color` の乗算では
+ * 8 台を見分けられない（黄を掛けても青が落ちて赤が残るだけ）。彩度のある画素だけ
+ * 色相を差し替えたテクスチャを `tools/build-car-liveries.mjs` が焼く。
+ *
+ * **このテーブルを生成ツールと manifest とビューが共有する。** 枚数や寸法を変えたときに
+ * 登録漏れが起きないよう、URL は必ず `carLiveryTexture()` から引く。
+ */
+export interface CarLivery {
+  /** 塗り替えの元。`public/` からの相対 */
+  readonly source: string;
+  /** 出力する一辺 [px]。元より大きいときは整数倍のボックス縮小で落とす */
+  readonly size: number;
+  /** 枚数（＝出走台数） */
+  readonly count: number;
+  readonly directory: string;
+}
+
+export const CAR_LIVERIES: GenerationVariant<CarLivery | null> = defineGenerationVariant({
+  FC: null,
+  SFC: null,
+  PS1: {
+    source: 'assets/gen3/textures/car_base_color.png',
+    size: 256,
+    count: 8,
+    directory: 'gen3',
+  },
+  // 第4世代はフェーズ 5 で、そのときの寸法とあわせて決める
+  //（1024² のまま 8 枚焼くと 10 MB になり、初回ロードの予算に入らない）
+  PS2: null,
+});
+
+/** エントラント番号 → リバリーのテクスチャ URL。リバリーが無い世代は null */
+export function carLiveryTexture(generation: GenerationId, entrant: number): string | null {
+  const livery = generationValue(CAR_LIVERIES, generation);
+  if (!livery) return null;
+  const index = ((entrant % livery.count) + livery.count) % livery.count;
+  return `assets/${livery.directory}/textures/car_livery_${index}.png`;
+}
+
+/** 実際に貼るテクスチャ。リバリーがあればそれ、無ければ素の base color */
+export function carTextureFor(generation: GenerationId, entrant: number): string {
+  return carLiveryTexture(generation, entrant) ?? carModelFor(generation)?.texture ?? '';
+}
+
+/**
  * 車 GLB の前方軸は **-X**（`data/README.md` に記録・`car-conversion.json` に保存）。
  *
  * `rotationY(θ)` は局所ベクトル (x, 0, z) を (x·cosθ + z·sinθ, 0, −x·sinθ + z·cosθ) へ写す。

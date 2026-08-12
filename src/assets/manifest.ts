@@ -6,10 +6,32 @@ import {
 } from '@console-chaos/engine';
 
 import {
+  CAR_LIVERIES,
+  CAR_MODELS,
+  carLiveryTexture,
+} from '../game/view/shared/car-model.js';
+import {
   TRACK_MESH_LODS,
   trackSectorAsset,
   trackSurfaceTexture,
 } from '../game/view/shared/track-mesh.js';
+
+/**
+ * 車のテクスチャもテーブルから導く。リバリーを持つ世代は 8 枚、
+ * 持たない世代は素の base color 1 枚。枚数を変えたときの登録漏れを構造的に防ぐ。
+ */
+const carTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
+  const model = CAR_MODELS[generation];
+  if (!model) return [];
+  const livery = CAR_LIVERIES[generation];
+  const urls = livery
+    ? Array.from({ length: livery.count }, (_unused, entrant) =>
+        carLiveryTexture(generation, entrant),
+      ).filter((url): url is string => url !== null)
+    : [model.texture];
+  // メッシュが参照するテクスチャなので flipY: false（下の textures のコメントを参照）
+  return urls.map((url) => ({ url, wrap: 'clamp' as const, flipY: false }));
+});
 
 /**
  * コースメッシュの登録は LOD テーブルから導く。セクター数を変えたときに
@@ -55,8 +77,7 @@ export const MANIFEST: RenderAssetManifest = {
     // glTF の UV は v = 0 が画像の上端だが、レンダラーは `textures` を既定 `flipY: true` で
     // 取り込む（アトラスだけは false を強制する）。指定を忘れると上下逆に貼られ、
     // 車体が迷彩柄のようになる。`frame-contract.spec.ts` がこの規約を検査する。
-    { url: 'assets/gen3/textures/car_base_color.png', wrap: 'clamp', flipY: false },
-    { url: 'assets/gen4/textures/car_base_color.png', wrap: 'clamp', flipY: false },
+    ...carTextures,
     { url: 'assets/gen4/environment/circuit.png', wrap: 'repeat' },
     ...trackTextures,
   ],

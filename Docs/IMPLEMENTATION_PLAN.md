@@ -282,7 +282,8 @@ Docs/
 | `public/assets/common/markers.png` | `build-minimap.mjs` | 車マーカー（8×8 の丸・四角の 2 セル） | 1 |
 | `public/assets/gen3/models/track.glb` | `build-track-mesh.mjs` | 第3世代コース（4 m 刻み） | 2 |
 | `public/assets/gen4/models/track.glb` | `build-track-mesh.mjs` | 第4世代コース（1 m 刻み） | 5 |
-| `public/assets/gen{3,4}/textures/track_*.png` | 同上 | 路面・縁石・草地 | 2 / 5 |
+| `public/assets/gen{3,4}/textures/track_surface.png` | 同上 | 路面・縁石・草地を 1 枚に収めたアトラス | 2 / 5 |
+| `public/assets/gen3/textures/car_livery_N.png` | `build-car-liveries.mjs` | エントラントごとの車体色（8 枚・256²） | 2 |
 | `public/assets/common/font.png` | `build-font-atlas.mjs` | HUD（8×8 / 16×6） | 7 |
 | `public/assets/common/logo.png` | `build-title-logo.mjs` | タイトルロゴ | 7 |
 | `public/assets/gen2/tiles/circuit_map.png` | `build-track-map.mjs` | 第2世代の改善案（§3.3）。必要になった場合のみ | 8 |
@@ -431,7 +432,9 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
   - セクター分割の役割は**描画距離のカリング**であって前後関係ではない。前後関係は ordering table が受け持つ（下記）。セクターの継ぎ目は同じ弧長から同じ式で生成するので頂点が完全一致し、割れない
   - 三角形の巻き順は**上から見て反時計回り**（法線が +Y）。逆にすると裏面カリングで路面がまるごと消える
 - 車は `MeshCommand.asset = 'assets/genN/models/car.glb'`。**前方が `-X`** なので `transform.rotationY` で補正する。`rotationY(θ)` は局所 (x, 0, z) を (x·cosθ + z·sinθ, 0, −x·sinθ + z·cosθ) へ写すので、局所前方 (−1, 0, 0) をワールドの進行方向 (cos H, 0, sin H) に合わせると **θ = π − H**（実装で確定・`car-orientation.spec.ts` が固定）。
-- runtime GLB は material も image も持たない（変換で除去済み・実測確認済み）。したがって `MaterialCommand`（`baseColorTexture` に `assets/genN/textures/car_base_color.png`）を**必ず**積む。積み忘れると fallback 柄で描かれ、例外にならないので気付きにくい。§6.2 の `frame-contract.spec.ts` で検出する。
+- runtime GLB は material も image も持たない（変換で除去済み・実測確認済み）。したがって `MaterialCommand`（`baseColorTexture`）を**必ず**積む。積み忘れると fallback 柄で描かれ、例外にならないので気付きにくい。§6.2 の `frame-contract.spec.ts` で検出する。
+- **メッシュが参照するテクスチャは `flipY: false` で登録する。** glTF の UV は v = 0 が画像の上端だが、レンダラーは `manifest.textures` を既定 `flipY: true` で取り込む（アトラスだけは false を強制）。指定を忘れると上下逆に貼られ、UV アイランドの位置がずれて車体が迷彩柄になる。これも例外にならないので `frame-contract.spec.ts` で検出する。
+- **車体色はテクスチャを塗り分ける。** base color には赤いリバリーが焼き込まれているので、`MeshCommand.color` の乗算では 8 台を見分けられない（黄を掛けても青が落ちて赤が残るだけ）。`tools/build-car-liveries.mjs` が彩度のある画素だけ色相を差し替えたテクスチャを 8 枚焼く。タイヤ・窓・影といった無彩色の画素は通すので、陰影を保ったまま車体色だけが変わる（実機のパレット差し替えと同じ考え方）。マテリアルはエントラントごとに 1 つ積む。
 - 影は `castShadow: true` + `groundY` を路面高に設定（エンジンが点光源から落ち影を落とす）。**第3世代は `dynamicLight: false` なので点光源が無く、影は落ちない**。指定は残しておき、実際に効くのは第4世代から。
 
 **第3世代（PS1）固有**:
@@ -715,7 +718,9 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | フレーム時間 | 16.6 ms（60 fps）を全世代で維持 |
 | 三角形数 | 20,000 tri/frame（エンジンの明示予算） |
 | ドローコール | 第2世代の per-scanline アフィンが最大。240 コール以内。超えたら帯を 2→4 行に粗くする |
-| 初回ロード | 全アセット合計 約 2.6 MB。プリロード完了まで進行度表示を出す |
+| 初回ロード | 全アセット合計 **約 4.4 MB**（フェーズ 2 時点の実測）。プリロード完了まで進行度表示を出す |
+
+計画時の見積もりは 2.6 MB だったが、生成アセットを足した実測は 4.4 MB になった。内訳の大きいものは第3世代のリバリー 8 枚（1.02 MB）・第4世代の車テクスチャ（1.20 MB）・環境マップ（0.70 MB）・コースメッシュ（1.10 MB）。第4世代のリバリー（フェーズ 5）を 1024² のまま 8 枚焼くと 10 MB 増えるので、そこは 512² 以下にするか枚数を絞る。
 
 ---
 

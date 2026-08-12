@@ -6,7 +6,7 @@ import type {
 } from '@console-chaos/engine';
 
 import type { ViewContext } from './context.js';
-import { carModelFor, carTransform } from './shared/car-model.js';
+import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
 import { followCamera } from './shared/camera.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
 import {
@@ -15,7 +15,7 @@ import {
   trackSurfaceTexture,
   visibleSectors,
 } from './shared/track-mesh.js';
-import { PLAYER_ENTRANT, carTintFor } from './shared/variants.js';
+import { PLAYER_ENTRANT } from './shared/variants.js';
 
 /**
  * 第3世代（PS1）— 深度バッファの無い 3D（実装計画 §3.4）。
@@ -96,16 +96,19 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
     });
   }
 
-  // ── 車。8 台で 1 つのマテリアルを共有し、色は MeshCommand.color で分ける
-  const carMaterial: MaterialCommand = {
-    id: `car-${generation}`,
-    baseColorTexture: carModel.texture,
-    uvMode: 'affine',
-    polygonSort: true,
-    ...UNLIT,
-    generations: [generation],
-  };
-  frame.materials.push(carMaterial);
+  // ── 車。車体色はテクスチャそのものを塗り分けてある（`tools/build-car-liveries.mjs`）。
+  // 赤いリバリーに MeshCommand.color を掛ける方式では 8 台を見分けられないため、
+  // エントラントごとに 1 つマテリアルを積む
+  for (const car of display.cars) {
+    frame.materials.push({
+      id: carMaterialId(generation, car.entrant),
+      baseColorTexture: carTextureFor(generation, car.entrant),
+      uvMode: 'affine',
+      polygonSort: true,
+      ...UNLIT,
+      generations: [generation],
+    } satisfies MaterialCommand);
+  }
 
   // 同じスロットの中では登録順が保たれる。遠い車から積んで、近い車を後に描く
   const camera = frame.camera.position;
@@ -120,8 +123,9 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
       geometry: TRACK_GEOMETRY,
       asset: carModel.asset,
       transform: carTransform(track, car),
-      color: carTintFor(car.entrant),
-      material: carMaterial.id,
+      // テクスチャ側で塗り分け済みなので、乗算はしない
+      color: '#ffffff',
+      material: carMaterialId(generation, car.entrant),
       orderTableIndex: CAR_SLOT,
       castShadow: true,
       groundY,
@@ -138,6 +142,10 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
     rect: defaultMinimapRect(generation, profile),
     frameIndex: display.frameIndex,
   });
+}
+
+function carMaterialId(generation: string, entrant: number): string {
+  return `car-${generation}-${entrant}`;
 }
 
 function distanceTo(
