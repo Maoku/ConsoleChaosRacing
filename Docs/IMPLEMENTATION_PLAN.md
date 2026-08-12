@@ -9,6 +9,7 @@
 - 更新: 2026-08-12（フェーズ 0・1 の実装完了を反映。**エンジン 0.2.0 への更新を反映** — スプライトのシーン統合・`HardwareBlendCommand`・第3世代の 12 スロット ordering table）
 - 更新: 2026-08-12（フェーズ 3 の実装完了を反映 — 走査線 `width ≤ 1` が「路面が細くなれる限界」も決めること・`BackgroundCommand.parallax` が読まれないこと・生成アセットの色はマスターパレットに載せること）
 - 更新: 2026-08-13（フェーズ 4 の実装完了を反映 — 第2世代の**半透明スプライトだけがシーンへ直接合成される**こと・`AffineSurfaceCommand` に明るさの項が無いこと・アフィン面の `wrap` と V の扱い）
+- 更新: 2026-08-13（フェーズ 5 の実装完了を反映 — **遠景の層と環境マップで flipY の要求が逆**なこと・落ち影の形が `transform.scale` に縛られること・ordering table が第3世代専用パスであること・初回ロードの実測）
 
 ---
 
@@ -76,6 +77,11 @@
 | `AffineSurfaceCommand` は `uvOrigin + uvStepX·x + uvStepY·y` を引くだけで、**明るさもフォグも持たない**（ラスターの `brightness` に当たる項が無い） | 第2世代の遠方の霞は路面の上に重ねて作るしかない（§3.3） |
 | 第2世代の**`hardwareBlend` を持つスプライトだけはシーンへ直接描かれる**。不透明スプライトは独立面へ描かれ、`sprite.a ≥ 0.5` のしきい値で上書き合成される（実測） | 落ち影とフォグは路面と本当に混ざる。半透明スプライトは必ず不透明スプライトより奥になる |
 | 走査線ごとのアフィン面は**全画面三角形＋discard**で描かれる（1 帯 = 1 ドローコール） | 135 本でも GPU 側は軽いが、コマンド数は帯の粒度でそのまま増える |
+| `BackgroundCommand.texture`（遠景の層）と `MaterialCommand.environmentTexture`（映り込み）で **`flipY` の要求が逆**（フェーズ 5 で確定）。層のシェーダは「絵は反転済み」を前提に v をそのまま渡し、`equirectangularUv()` は `v = 0` を真上とみなす | **同じ 1 枚を空と映り込みの両方には使えない**。地平線の帯を別ファイルへ焼き出す（§3.4） |
+| 落ち影は `castShadow` + `groundY` + **点光源 1 つ**（`dynamicLight` の世代のみ）で出る。四角形の大きさは `transform.scale` から作られ、それはメッシュ本体と共有。倍率は `高さ /(高さ − メッシュの高さ)` で、濃さにはその逆数（上限は 0.72）が掛かる | 影の形はメッシュと独立に選べない。**影を落とすためだけの、描かれないメッシュ**を積んで回避する（§3.4） |
+| 12 スロットの ordering table を走査するのは **`id === 'PS1'` のときだけ**（実測）。他の世代は不透明を非ソート、半透明を距離ソートで描く | `orderTableIndex` / `polygonSortRange` / `polygonSort` は第3世代でしか効かない。第4世代では**指定しない**ことがそのまま世代差になる |
+| `MaterialCommand.uvMode` / `filter` は WebGL レンダラーが読まない。UV 補正は `profile.video.affineTexture`、フィルタは `textureFilter` から決まる | 書いても害は無いが、効くと思って調整しない。書くなら意図の記録として |
+| `createBrowserLoopHost` は **`document.hidden` の間ティックを止める**（`isHidden()` で早期 return） | ヘッドレスなブラウザ越しに動作確認するときは `document.hidden` を偽装しないと真っ黒のままになる。不具合ではない |
 | 音声は `createGenerationAudioService` が `profile.audio.synth` ごとに音源を登録し、`GameHost` が世代切替時に自動で差し替える。`MusicClock` により**位相は保たれる** | 曲データは 1 つ。編曲だけ `useScore` で差し替える |
 | 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3 |
 | `@console-chaos/engine-testkit` は同梱されていない（0.2.0 でも tarball には含まれない） | テストは自前の手動ループホストか、純ロジックのみを対象にする |
@@ -234,6 +240,7 @@ src/
     input/bindings.ts     ActionMap 定義
 tools/
   build-track-mesh.mjs    コース中心線 → GLB（Gen3/Gen4 用、LOD 2 段）
+  build-skyline.mjs       環境マップ → 第4世代の遠景の帯（地平線まわりの切り出し）
   build-minimap.mjs       track.ts を import してミニマップ俯瞰図 PNG を世代ごとに生成
   build-font-atlas.mjs    HUD フォントアトラス PNG 生成
   build-title-logo.mjs    タイトルロゴ PNG 生成
@@ -272,6 +279,7 @@ Docs/
 | `build:track` | コース中心線 → `gen{3,4}/models/track.glb` | 2 / 5 |
 | `build:road` | 第1世代のラスター路面テクスチャ | 3 |
 | `build:sprites` | 車スプライトのアトラス整形 | 3 |
+| `build:skyline` | 環境マップ → 第4世代の遠景の帯 | 5 |
 | `build:font` | HUD フォントアトラス | 7 |
 | `build:logo` | タイトルロゴ | 7 |
 | `build:assets` | 上記の生成系をまとめて実行 | 7 |
@@ -291,9 +299,10 @@ Docs/
 | --- | --- | --- | --- |
 | `public/assets/gen{1,2,3,4}/hud/minimap.png` | `build-minimap.mjs` | ミニマップの俯瞰図（56² / 72² / 88² / 176²） | 1 |
 | `public/assets/common/markers.png` | `build-minimap.mjs` | 車マーカーと共通の形（8×8 の丸・四角・塗りつぶしの 3 セル）。**スプライトはアトラス経由でしか描けない**ので、単色の帯もここを通る | 1 / 4 |
-| `public/assets/gen3/models/track.glb` | `build-track-mesh.mjs` | 第3世代コース（4 m 刻み） | 2 |
-| `public/assets/gen4/models/track.glb` | `build-track-mesh.mjs` | 第4世代コース（1 m 刻み） | 5 |
-| `public/assets/gen{3,4}/textures/track_surface.png` | 同上 | 路面・縁石・草地を 1 枚に収めたアトラス | 2 / 5 |
+| `public/assets/gen3/models/track-NN.glb` | `build-track-mesh.mjs` | 第3世代コース（4 m 刻み・8 セクター） | 2 |
+| `public/assets/gen4/models/track-NN.glb` | `build-track-mesh.mjs` | 第4世代コース（1 m 刻み・50 セクター） | 5 |
+| `public/assets/gen{3,4}/textures/track_surface.png` | 同上 | 路面・縁石・草地を 1 枚に収めたアトラス（256² / 512²） | 2 / 5 |
+| `public/assets/gen4/backgrounds/skyline.png` | `build-skyline.mjs` | 環境マップから切り出した地平線の帯（1024×284）。**空と映り込みを同じ絵から出すのに要る**（§3.4） | 5 |
 | `public/assets/gen{3,4}/textures/car_paint.png` | `build-car-paint.mjs` | 無彩色の塗装テクスチャ（256² / 512²）。車体色は実行時の乗算で決まる | 2 |
 | `public/assets/gen1/road/road_wide.png` | `build-road-texture.mjs` | 第1世代のラスター路面（1024×256 / 横 84 m・縦 96 m）。同梱の `road.png` では描画距離が伸びない（§3.2） | 3 |
 | `public/assets/gen2/road/road_affine.png` | 同上 | 第2世代のアフィン路面（1024×512 / 横 96 m・縦 96 m）。同梱の `circuit.png` は草地のディザが遠方でちらつく（§3.3） | 4 |
@@ -465,7 +474,9 @@ wrap    = 'clamp'
 - `CameraCommand.projection = 'perspective'`、自機の後方 6.5 m / 高さ 2.2 m、注視点は自機の 12 m 前方。速度に応じて FOV を 60°→72°、カメラ距離を微増。
 - コースは `tools/build-track-mesh.mjs` が中心線から生成した GLB を `MeshCommand.asset` で描く。`TransformCommand` に X/Z 回転が無いため、バンクと標高はメッシュに焼き込むしかない。
   - 出力: `public/assets/gen3/models/track-NN.glb`（粗・PS1 用）と `public/assets/gen4/models/track-NN.glb`（細・PS2 用）。**セクターごとに 1 ファイル**にする（下の「セクター分割の役割」を参照）
-  - 分割: PS1 は 4 m 刻み、PS2 は 1 m 刻み。**PS1 側をあえて粗くするのではなく、細かくしすぎない**ことでアフィンテクスチャの歪みと頂点量子化の揺れが画面に出る（エンジンの `geometry.ts` が明記している性質）。あわせて路面を横方向にも分割する（PS1 は 6 分割 ＝ 1 マス 2 m）。粗すぎると揺れが「面の波打ち」ではなく「物体全体の平行移動」に見えてしまう（§6.1 第3世代基準 2）
+  - 分割: PS1 は 4 m 刻み（8 セクター × 97 輪）、PS2 は 1 m 刻み（50 セクター × 62 輪）。**PS1 側をあえて粗くするのではなく、細かくしすぎない**ことでアフィンテクスチャの歪みと頂点量子化の揺れが画面に出る（エンジンの `geometry.ts` が明記している性質）。あわせて路面を横方向にも分割する（6 分割 ＝ 1 マス 2 m）。粗すぎると揺れが「面の波打ち」ではなく「物体全体の平行移動」に見えてしまう（§6.1 第3世代基準 2）
+  - **横分割は 2 世代で同じ 6 のままにする**（実装で確定）。第4世代には頂点量子化もアフィン歪みも無いので、横に割る理由がそもそも無い。縦の刻みだけを 4 倍細かくすることで、差が「標高とバンクの滑らかさ・解像度・フィルタ・ライティング」からだけ出る
+  - 描画は自機のセクターの前後 `visibleRadius` 個。**前方に保証される距離は `visibleRadius × セクター長`** で、フォグはその内側で閉じるよう決める（PS1 は 1 × 387 m、PS2 は 5 × 62 m ＝ 310 m）。第4世代を細かいセクターに割ってあるのはこのカリングのためで、深度バッファがある以上ほかに分ける理由は無い
   - **路面 / 縁石 / 草地は 1 枚のアトラスの別々の u 帯へ写す**（実装で確定）。`MeshCommand` は `asset` の全プリミティブを 1 つの `MaterialCommand` で描くため、面ごとにマテリアルを分けるにはメッシュ自体を分けるしかない。当時のテクスチャページと同じ作りにするほうが素直で、三角形単位のソートも 1 回で済む
   - セクター分割の役割は**描画距離のカリング**であって前後関係ではない。前後関係は ordering table が受け持つ（下記）。セクターの継ぎ目は同じ弧長から同じ式で生成するので頂点が完全一致し、割れない
   - 三角形の巻き順は**上から見て反時計回り**（法線が +Y）。逆にすると裏面カリングで路面がまるごと消える
@@ -476,7 +487,7 @@ wrap    = 'clamp'
   - 明度の作り方が肝。塗装部（彩度あり）は **V（HSV の明度）** を使って平均を 0.82 へ正規化する。輝度をそのまま使うと赤の輝度が低いため、色を掛けたとき暗く沈む。無彩色部（タイヤ・窓）は輝度をそのまま使い、境目は彩度でなだらかに混ぜる
   - 引き換えに**タイヤ・窓も車体色に染まる**。シェーダの合成は `texture * uBaseColorFactor` の素直な乗算で、部位ごとにマスクを掛ける口が無い（`topColorTexture` は法線が上向きかで切り替わる地形用の仕組み）。元が暗いので「影のかかったホイール」として読める範囲に収まっており、8 枚焼き分けるより得だと判断した
   - 第4世代の runtime `car_base_color.png` は変換記録の成果物としてディスクに残すが、実行時に読むのは `car_paint.png`（512²）のほうになる
-- 影は `castShadow: true` + `groundY` を路面高に設定（エンジンが点光源から落ち影を落とす）。**第3世代は `dynamicLight: false` なので点光源が無く、影は落ちない**。指定は残しておき、実際に効くのは第4世代から。
+- 影は `castShadow: true` + `groundY` を路面高に設定（エンジンが点光源から落ち影を落とす）。**第3世代は `dynamicLight: false` なので点光源が無く、影は落ちない**。実際に効くのは第4世代からで、そちらは**影専用のメッシュ**が受け持つ（下記）。
 
 **第3世代（PS1）固有**:
 
@@ -490,11 +501,19 @@ wrap    = 'clamp'
 
 **第4世代（PS2）固有**:
 
-- `depthBuffer: true` ⇒ 前後関係は正しい。コースは 1 メッシュでよい。
+- `depthBuffer: true` ⇒ 前後関係は正しい。**12 スロットの ordering table を走査するのは第3世代だけ**（実装で確定）なので、`orderTableIndex` / `polygonSortRange` / `polygonSort` をこの世代では**1 つも指定しない**。指定が要らないこと自体がそのままハードウェアの差になる。`manifest.models` の `polygonSort` も `profile.video.depthBuffer` から導き、第4世代ではソート用の作業配列を確保しない。
 - `environmentMap: true` ⇒ 車のマテリアルに `environmentTexture: 'assets/gen4/environment/circuit.png'`、`environmentStrength: 0.35`。エンジンの正距円筒マッピング（`equirectangularUv`）で車体に景色が映り込む。**これが第4世代の署名的表現**。
-- 同じ環境マップを `BackgroundCommand.texture` にも使い、空と遠景を一致させる。
-- `dynamicLight: true` ⇒ `LightCommand` を積む: 太陽（directional、環境マップの太陽位置と一致させる）、ambient、自機周辺の点光源 1 つ（落ち影の生成にも使われる）。
-- `textureFilter: 'linear'` と 640×448 により、同じ車モデルでも第3世代と明確に差が出る。
+  - **環境マップは `flipY: false` で登録する**（実装で確定）。`equirectangularUv()` は `v = acos(d.y)/π` すなわち `v = 0` を真上とみなすが、レンダラーの `textures` は既定で上下を反転して取り込む。間違えると**空が地面として映り込む** — 例外にならないので `frame-contract.spec.ts` と `gen4-environment.spec.ts` が検出する。
+  - 強さの上限は 0.35 前後（実装で確定）。合成は `color·(1−k) + k·min(color·0.55 + env·0.65, 1)` なので、0.5 を越えると空の青が塗装を飲み、**8 台をエントラント色で見分けられなくなる**。ミニマップのマーカーと車体色が対応しているという §3.6 の主張が崩れるため、ここは上げない。
+- **空と遠景**: 同じ環境マップを `BackgroundCommand.texture` にそのまま渡すことは**できない**（実装で確定）。遠景の層のシェーダは「絵は反転済み」を前提に v をそのまま渡すので、映り込みと `flipY` の要求が逆になる。そこで `tools/build-skyline.mjs` が地平線まわり ±50° を切り出した帯 `gen4/backgrounds/skyline.png` を焼き、層にはそちらを渡す。元が同じ画像なので §6.1 基準 2 は満たされる。
+  - 帯の置き方は**実際のカメラから決まる**。方位は映り込みが引くのと同じ `equirectU()` を通し、`repeat` は内部解像度の縦横比から出した水平画角ぶん、水平線の行はカメラのピッチと `(画面高/2)/tan(縦画角/2)` から出す。`parallax` はレンダラーが読まないので `offset` へ畳み込む点は第1・第2世代と同じだが、こちらは**視差の量が推測ではなく決まっている**。
+  - 帯を ±50° と広く採ってあるのは、**どの画角・どの見下ろし角でも画面を覆いきる**ため。層は平らに貼られるので仰角と行の対応は本来 tan で曲がるが、水平線だけを合わせて縁のずれは絵の無い空へ逃がす。狭く採ると帯の縁で色が跳ねて横線に見える。
+  - 地平線のすぐ下（−2°〜−9°）から一様な霞へ溶かす。環境マップには**撮影地のコースそのもの**が写っており、残すと自分たちの 3D コースの左右に二本目の道路が現れる。潰した先の色・空の階調・フォグ色はすべて生成ツールが環境マップから実測するので、手で写す定数が無い。
+- `dynamicLight: true` ⇒ `LightCommand` を 3 つ積む: ambient（空の色）、directional（太陽。**環境マップの最輝点から実測した向き** `SUN_DIRECTION` を使い、映り込みに写っている太陽と陰影を一致させる）、そして落ち影を生む点光源。
+  - **落ち影は「影を落とすためだけの、描かれないメッシュ」が受け持つ**（実装で確定）。エンジンは影の四角形の大きさを `transform.scale` から作るが、それはメッシュ本体と共有なので、車に直接 `castShadow` を付けると**2 m 角の影しか出せない**（車は 1.9 × 0.88 m）。`colorFactor` を透明にし `alphaCutoff: 1` で全画素を捨てるマテリアルを与えた quad を 1 台につき 1 つ積み、1.0 m 角に収める。費用はドローコール 1 つぶん（2 三角形・全画素 discard）。
+  - 点光源は**自機の 40 m 上**に置く。影の倍率は `高さ /(高さ − 車の高さ)`、濃さはその逆数なので、低いと影が巨大化して薄まり、しかも遠くの車ほど影が横へ流れる（影は光源からの投影）。高く置くと倍率が 1.006 に収まる。半径は高さより少しだけ大きい程度にする — 点光源は照明でもあり、広げると自機のまわりだけが明るく浮く。
+- `textureFilter: 'linear'` と 640×448 により、同じ車モデルでも第3世代と明確に差が出る。路面アトラスも 256² → 512² に上げる（`textureSize` を LOD テーブルが持つ）。
+- フォグ密度は 0.011（100 m で 67%・300 m で 96%）。第3世代の 0.014 より薄く、描画距離の伸びがそのまま世代の差になる。
 - `MaterialCommand.uvScrollY` を路面の陽炎表現などに使う余地を残す。
 - ワールド空間スプライトが `billboard: 'cylindrical' | 'spherical'` と `depthWrite` を選べる（0.2.0）。砂埃・ブレーキ光・観客といったビルボード表現をここで足せる。半透明は `{ family: 'gen4-gs', preset: … }` で任意の不透明度を出せる — **4 世代でこの世代だけ**。
 
@@ -741,7 +760,8 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | `generation-invariance.spec.ts` | 500 ティック目に世代を FC→PS2→SFC→PS1 と切り替え、切り替えない実行と**状態ハッシュが完全一致**する |
 | `raster-scanline.spec.ts` | 全行の `width ∈ (0,1]`、`brightness ∈ [0,1]`、`scanlines.length === height*4` を満たす（`validateRasterSurface` は例外を投げるため、投げないことを確認） |
 | `affine-surface.spec.ts` | `validateAffineSurface` が全行で通る。`affineUvAt` の CPU 参照と自前の逆算が一致 |
-| `frame-contract.spec.ts` | 各ビューが積んだ全 `MeshCommand.material` に対応する `MaterialCommand` が存在する（実行時 `throw` の事前検出）。あわせて全マテリアルが `baseColorTexture` を持つ（fallback 柄で描かれる事故の検出） |
+| `frame-contract.spec.ts` | 各ビューが積んだ全 `MeshCommand.material` に対応する `MaterialCommand` が存在する（実行時 `throw` の事前検出）。あわせて全マテリアルが `baseColorTexture` を持ち（fallback 柄で描かれる事故の検出）、`baseColorTexture` と `environmentTexture` が `flipY: false` で登録されている（上下逆に貼られる事故の検出） |
+| `gen4-environment.spec.ts` | 環境マップの画素と定数の突き合わせ: 空の階調とフォグ色が実測値から外れていない・`SUN_DIRECTION` が最輝点と 3° 以内で一致・遠景の帯が切り出しの行そのもので地平線より下が一様に潰れている・帯の U が映り込みと同じ式でカメラの方位から決まりどの画角でも画面を覆いきる・影が専用メッシュで落ち車体に `scale` が入らない・描画順の指定を 1 つも持たない |
 | `capability-contract.spec.ts` | §1.4 の能力契約をコマンド列に対して検査する: FC は 8px 丸め済み・`hardwareBlend` を持つコマンド 0 件・スプライト走査線制限適用済み、SFC は丸め無し。各コマンドの `hardwareBlend` が `generationSupportsHardwareBlend()` を満たし、`generations` と食い違わないこと（実行時 `throw` の事前検出）。世代 ID 直接分岐が無いことは ESLint ルールではなくレビュー項目とする |
 | `palette-budget.spec.ts` | 各世代のビューが使う色定数（`defineGenerationVariant` にまとまっている）を数え、FC が 25 色以内・SFC が 256 色以内に収まる。実画面の色数は §7 フェーズ 8 でスクリーンショットから計測する |
 | `score-phase.spec.ts` | 編曲差し替え前後で `phasePreserved` が真 |
@@ -757,11 +777,17 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | 項目 | 予算 |
 | --- | --- |
 | フレーム時間 | 16.6 ms（60 fps）を全世代で維持 |
-| 三角形数 | 20,000 tri/frame（エンジンの明示予算） |
+| 三角形数 | 20,000 tri/frame（エンジンの明示予算）。**路面だけで使い切らないこと**を LOD の制約として持つ |
 | ドローコール | 第2世代の per-scanline アフィンが最大。240 コール以内。超えたら帯を 2→4 行に粗くする |
-| 初回ロード | 全アセット合計 **約 3.0 MB**（フェーズ 2 時点。`public/assets` のディスク上は 3.8 MB だが、変換記録用に残している車の base color は実行時に読まない）。プリロード完了まで進行度表示を出す |
+| 初回ロード | manifest が読む全アセット合計 **4.41 MB**（フェーズ 5 実測）。プリロード完了まで進行度表示を出す |
 
-計画時の見積もりは 2.6 MB。生成アセットを足した実測はほぼ見積もりどおりに収まっている。内訳の大きいものはコースメッシュ（1.10 MB）・環境マップ（0.70 MB）・遠景とスプライト（0.30 MB）・車モデル（0.63 MB）。車体色を「無彩色 1 枚 × 実行時の乗算」にしたことで、塗装テクスチャは第3世代 57 KB・第4世代 186 KB で済んでいる（エントラントごとに焼き分けると第3世代だけで 1.02 MB、第4世代を 1024² で 8 枚焼くと 10 MB になっていた）。
+内訳の大きいものは第4世代のコースメッシュ（1.89 MB）・環境マップ（0.70 MB）・第4世代の車モデル（0.58 MB）・第3世代のコースメッシュ（0.47 MB）・遠景の帯（0.35 MB）。`public/assets` のディスク上は 6.3 MB だが、変換記録用に残している車の base color は実行時に読まない。
+
+計画時の見積もりは 2.6 MB で、第4世代のコースメッシュ（1 m 刻み × 3,100 輪）が想定より重い。1 m 刻みは標高とバンクの滑らかさに直結する要求（§6.1 第4世代基準 3）なので刻みは落とさず、**初回ロードの予算のほうを実測値へ改める**。減らすなら横分割（現在 6）を先に削る余地がある。
+
+車体色を「無彩色 1 枚 × 実行時の乗算」にしたことで、塗装テクスチャは第3世代 57 KB・第4世代 186 KB で済んでいる（エントラントごとに焼き分けると第3世代だけで 1.02 MB、第4世代を 1024² で 8 枚焼くと 10 MB になっていた）。
+
+**三角形の実測**（走行中の 1 フレーム）: 第3世代は路面 3 セクター 5,820 tri ＋ 車 8 台 7,824 tri ＝ 約 13,600 tri。第4世代は路面 11 セクター 13,640 tri ＋ 車 8 台 108,944 tri で、**予算を大きく超える**。20,000 tri はリリースノートが第3世代の ordering table の partition 性能（CPU 側の安定分割）を測った値であり、深度バッファがあってソートを一切しない第4世代には掛からない。フェーズ 8 で実フレーム時間を測り、必要なら遠方の車を第3世代のモデル（978 tri）へ落とす LOD を入れる — 当時の実機がやっていたことでもある。
 
 ---
 
@@ -826,12 +852,19 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
   - 基準 4 の実測 — 実画面の色数カウント（第1世代との差が数値で出るか）
   - フォグの帯は 50% の段階しか作れないため、最も手前の段の境目が横線として見える可能性がある。実画面で確認し、必要なら段を増やすか距離を調整する
 
-### フェーズ 5 — 第4世代（PS2）
+### フェーズ 5 — 第4世代（PS2）✅ 実装済み
 
-- `tools/build-track-mesh.mjs` の細 LOD 出力
-- `view/gen4-ps2.ts`（環境マップ、動的ライト、落ち影、60Hz）
-- ミニマップの PS2 variant（176²、順位色、自機の強調縁）
+- `tools/build-track-mesh.mjs` の細 LOD 出力（50 セクター × 62 輪 / 刻み 1.000 m / 路面アトラス 512²）
+- `tools/build-skyline.mjs` — 環境マップから地平線の帯を焼く（flipY の要求が逆で 1 枚を共用できないため）
+- `view/gen4-ps2.ts`（環境マップ、遠景の帯、動的ライト、影専用メッシュによる落ち影、60Hz）
+- ミニマップの PS2 variant（176²、順位色、自機の強調縁）はフェーズ 1 の実装がそのまま効く
+- `gen4-environment.spec.ts`、`frame-contract.spec.ts` に `environmentTexture` の flipY 規約
+- 4 世代とも専用ビューが揃ったので暫定表示 `view/placeholder.ts` を削除
 - **完了条件**: §6.1 の第4世代基準 1–5 を満たす。**4 世代すべてでミニマップが揃い、世代横断基準 6–7 を満たす**
+- **残件**（フェーズ 8 で扱う）:
+  - 三角形の実測が予算を超えている（§6.3）。実フレーム時間を測り、必要なら遠方の車を第3世代のモデルへ落とす LOD を入れる
+  - 初回ロードが 4.41 MB。第4世代のコースメッシュが 1.89 MB を占める（§6.3）
+  - 遠景の帯は仰角を線形に画面へ写しているため、水平線から離れるほど本来の tan とずれる。空しか無い範囲なので見えないが、雲の位置は厳密には正しくない
 
 ### フェーズ 6 — サウンド
 
@@ -883,6 +916,9 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | 第1世代でミニマップのマーカーが 8 スプライト/走査線を食い、ライバル車が消えすぎる | ゲームが成立しない | マーカーは 2×2 px でミニマップ矩形（56²・約 56 走査線）内に限定されるため、影響は画面右下の帯だけに閉じる。それでも足りない場合はマーカーを縦方向に 1px ずらして走査線を分散させる |
 | ミニマップの俯瞰図テクスチャとマーカー座標がずれる | 証明が成立せず、むしろ逆効果 | 生成ツールが `src/game/sim/track.ts` を直接 import し、`trackBounds` を共有する（実装を複製しない）。`minimap.spec.ts` でツール側と実行時の `trackBounds` の同値性を固定する |
 | 車 GLB の前方軸 `-X` の符号を取り違える | 車が横向き | フェーズ 2 の最初に 1 回だけ実測し、`FRONT_AXIS_YAW_OFFSET` として定数化。テストで固定 |
+| 環境マップの `flipY` を取り違えると**空が地面として映り込む** | 第4世代の署名的表現が壊れるのに例外が出ない | フェーズ 5 で発生条件を実測。`environmentTexture` は `flipY: false`・遠景の層は既定（反転済み前提）と用途で逆になるので、**同じ 1 枚を共用せず**帯を焼き分ける。`frame-contract.spec.ts` と `gen4-environment.spec.ts` が規約を検査する |
+| 落ち影の形が `transform.scale` に縛られ、車に付けると 2 m 角になる | 第4世代基準 3 が「四角い黒い板」になる | **フェーズ 5 で発生し、対処済み。** 影を落とすためだけの、全画素を捨てるメッシュを 1 台につき 1 つ積み、1.0 m 角に収めた（§3.4） |
+| 第4世代の三角形数が予算（20,000 tri）を大きく超える | フレーム落ち | フェーズ 5 で実測（車 8 台で 108,944 tri）。予算値は第3世代の CPU 側ソート性能に由来し、深度バッファのある第4世代には掛からない。フェーズ 8 で実フレーム時間を測り、必要なら遠方の車を第3世代のモデルへ落とす |
 | 世代切替が 2 世代分のコマンド生成を要求しフレーム負荷が倍 | 切替中のみフレーム落ち | 切替は 350–600 ms。`generation.renderGenerations()` が 2 を返すときだけ両方積む。第2世代が絡む切替は帯粒度を一時的に粗くする |
 
 ---
@@ -939,7 +975,10 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen2/backgrounds/coast.png',       wrap: 'repeat' },
     { url: 'assets/gen3/textures/car_base_color.png', wrap: 'clamp' },
     { url: 'assets/gen4/textures/car_base_color.png', wrap: 'clamp' },
-    { url: 'assets/gen4/environment/circuit.png',     wrap: 'repeat' },
+    // 映り込みは v = 0 を真上とみなす。既定（flipY: true）だと空が地面として映り込む
+    { url: 'assets/gen4/environment/circuit.png',     wrap: 'repeat', flipY: false },
+    // 遠景の層は逆に「絵は反転済み」を前提にしているので既定のまま（§3.4）
+    { url: 'assets/gen4/backgrounds/skyline.png',     wrap: 'repeat' },
     // フェーズ2/5で生成するコースのテクスチャ
   ],
   atlases: [
@@ -956,8 +995,10 @@ export const MANIFEST: RenderAssetManifest = {
   models: [
     { url: 'assets/gen3/models/car.glb',   polygonSort: true },
     { url: 'assets/gen4/models/car.glb' },
-    { url: 'assets/gen3/models/track.glb', polygonSort: true },  // 生成物
-    { url: 'assets/gen4/models/track.glb' },                     // 生成物
+    // 生成物。実際にはセクターごとに 1 ファイル（第3世代 8 個・第4世代 50 個）を
+    // LOD テーブルから導く。polygonSort も profile.video.depthBuffer から決める
+    { url: 'assets/gen3/models/track-00.glb', polygonSort: true },
+    { url: 'assets/gen4/models/track-00.glb' },
   ],
   geometries: [
     { kind: 'quad', halfSize: [1, 1] },
@@ -974,4 +1015,4 @@ export const MANIFEST: RenderAssetManifest = {
 
 > **スプライトとして描くものは `atlases` にだけ登録する。** レンダラーは `atlases` の URL も画像として読み込み、`flipY: false` / `wrap: 'clamp'` を強制するので、`textures` への二重登録は不要（`textures` 側の指定は無視される）。`textures` に載せるのは背景・マテリアル・サーフェスが参照するものだけ。
 >
-> `font.png` / `logo.png` / `markers.png` / `minimap.png` / `track.glb` / `track_*.png` は生成物のため、フェーズ 0 の manifest には含めず、生成したフェーズで追加する（`manifest.spec.ts` が実在チェックを行うため）。
+> `font.png` / `logo.png` / `markers.png` / `minimap.png` / `track-NN.glb` / `track_*.png` / `skyline.png` は生成物のため、フェーズ 0 の manifest には含めず、生成したフェーズで追加する（`manifest.spec.ts` が実在チェックを行うため）。
