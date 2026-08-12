@@ -6,13 +6,16 @@ import {
   type RenderFrame,
 } from '@console-chaos/engine';
 
+import { createEngineVoiceScheduler } from './audio/engine-sound.js';
+import { arrangementFor } from './audio/score.js';
+import { createRaceSfx } from './audio/sfx.js';
 import { createRacingActionMap } from './input/bindings.js';
 import { stepRace } from './sim/race.js';
 import { createRaceState } from './sim/state.js';
-import type { VehicleControl } from './sim/vehicle.js';
+import { VEHICLE, type VehicleControl } from './sim/vehicle.js';
 import { buildGenerationView } from './view/index.js';
 import { createDisplayLatch } from './view/shared/display-state.js';
-import { profileOf } from './view/shared/variants.js';
+import { PLAYER_ENTRANT, profileOf } from './view/shared/variants.js';
 
 /**
  * ゲームモジュール（実装計画 §2.4）。
@@ -29,6 +32,16 @@ export const racingModule: GameModule = {
     const race = createRaceState({ autoPilot: true });
     const display = createDisplayLatch();
     let seconds = 0;
+
+    // ── 音（実装計画 §4）。曲は 1 つで、世代が変わっても位相は保たれる。
+    // 音源の差し替えは `GameHost` が `onSwitch` で自動的に行うので、
+    // ゲーム側がやるのは**編曲の差し替えだけ**である
+    const engineSound = createEngineVoiceScheduler();
+    const sfx = createRaceSfx();
+    context.audio.playScore(arrangementFor(context.generation.generation));
+    const unsubscribeSwitch = context.generation.onSwitch((event) => {
+      context.audio.useScore(arrangementFor(event.to));
+    });
 
     return {
       fixedUpdate() {
@@ -53,6 +66,17 @@ export const racingModule: GameModule = {
         }
 
         stepRace(race, control);
+
+        // 音はシムの後。エンジン音は自機の状態から、効果音は立ち上がりから決まる。
+        // どちらも `AudioContext` の時計で先読みするので、描画が落ちても乱れない
+        const player = race.cars[PLAYER_ENTRANT]!;
+        engineSound.update(context.audio, context.generation.profile, {
+          speed: player.speed,
+          maxSpeed: VEHICLE.MAX_SPEED,
+          throttle: player.throttleInput,
+          offTrack: player.offTrack,
+        });
+        sfx.update(context.audio, context.generation.profile, race);
       },
 
       buildRenderFrame(frame: RenderFrame) {
@@ -74,7 +98,9 @@ export const racingModule: GameModule = {
         }
       },
 
-      dispose() {},
+      dispose() {
+        unsubscribeSwitch();
+      },
     };
   },
 };
