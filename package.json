@@ -15,7 +15,7 @@
     "build:assets": "npm run build:minimap"
   },
   "dependencies": {
-    "@console-chaos/engine": "file:reference/console-chaos-engine-0.1.0.tgz"
+    "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

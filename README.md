@@ -19,20 +19,26 @@ FC / SFC / PS1 / PS2 の 4 世代表現を 1 つのシミュレーションの�
 `reference/` 直下へ次の名前で置く。
 
 ```
-reference/console-chaos-engine-0.1.0.tgz
+reference/console-chaos-engine-0.2.0.tgz
 ```
 
 | 項目 | 値 |
 | --- | --- |
-| パッケージ | `@console-chaos/engine@0.1.0` |
-| 生成元 | `ConsoleChaosEngine` の `npm pack`（`artifacts/console-chaos-engine-0.1.0.tgz`） |
-| SHA-256 | `0871693e0e662fab0652970d7e54dc10acd84ec4ce2a91000973ba44d41b1786` |
+| パッケージ | `@console-chaos/engine@0.2.0` |
+| 生成元 | `ConsoleChaosEngine` の `npm pack`（`artifacts/console-chaos-engine-0.2.0.tgz`） |
+| SHA-256 | `e6b5b57c1a55179cccc3f1d690c1c481d418708f796039023dd6f4203b726d74` |
 
 配置したら現物を照合する。
 
 ```bash
-shasum -a 256 reference/console-chaos-engine-0.1.0.tgz
+shasum -a 256 reference/console-chaos-engine-0.2.0.tgz
 ```
+
+過去のバージョン:
+
+| バージョン | SHA-256 |
+| --- | --- |
+| 0.1.0 | `0871693e0e662fab0652970d7e54dc10acd84ec4ce2a91000973ba44d41b1786` |
 
 ### 2. 依存を入れる
 
