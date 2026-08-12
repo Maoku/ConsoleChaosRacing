@@ -10,6 +10,7 @@
 - 更新: 2026-08-12（フェーズ 3 の実装完了を反映 — 走査線 `width ≤ 1` が「路面が細くなれる限界」も決めること・`BackgroundCommand.parallax` が読まれないこと・生成アセットの色はマスターパレットに載せること）
 - 更新: 2026-08-13（フェーズ 4 の実装完了を反映 — 第2世代の**半透明スプライトだけがシーンへ直接合成される**こと・`AffineSurfaceCommand` に明るさの項が無いこと・アフィン面の `wrap` と V の扱い）
 - 更新: 2026-08-13（フェーズ 5 の実装完了を反映 — **遠景の層と環境マップで flipY の要求が逆**なこと・落ち影の形が `transform.scale` に縛られること・ordering table が第3世代専用パスであること・初回ロードの実測）
+- 更新: 2026-08-13（フェーズ 6 の実装完了を反映 — 役割がチャンネルへ 1 対 1 で割り当たること・編曲ごとの同時発音数の実測・エンジン音の予約に上限が要ること）
 
 ---
 
@@ -83,7 +84,9 @@
 | `MaterialCommand.uvMode` / `filter` は WebGL レンダラーが読まない。UV 補正は `profile.video.affineTexture`、フィルタは `textureFilter` から決まる | 書いても害は無いが、効くと思って調整しない。書くなら意図の記録として |
 | `createBrowserLoopHost` は **`document.hidden` の間ティックを止める**（`isHidden()` で早期 return） | ヘッドレスなブラウザ越しに動作確認するときは `document.hidden` を偽装しないと真っ黒のままになる。不具合ではない |
 | 音声は `createGenerationAudioService` が `profile.audio.synth` ごとに音源を登録し、`GameHost` が世代切替時に自動で差し替える。`MusicClock` により**位相は保たれる** | 曲データは 1 つ。編曲だけ `useScore` で差し替える |
-| 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3 |
+| 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3。**先読みの予約には 1 更新あたりの上限が要る** — タブが裏に回ると `AudioContext.currentTime` が大きく飛び、追いつこうとして何千発も予約してしまう |
+| 第1世代の音源は**役割をチャンネルへ 1 対 1 で割り当てる**（lead → 矩形波 1 / pad → 矩形波 2 / bass → 三角波 / perc → ノイズ / fx → PCM） | 第1世代では**同じ役割の 2 本目のトラックが鳴らせない**。ハモリは第2世代から足す（§4.1） |
+| `playOneShot` は BGM より低い優先度（0）で声を取り、足りなければ**効果音どうしが先に食い合う** | それでも編曲が声数を埋め尽くしていると BGM のパートが消える。編曲側で 1 声以上空けておく（§4.1） |
 | `@console-chaos/engine-testkit` は同梱されていない（0.2.0 でも tarball には含まれない） | テストは自前の手動ループホストか、純ロジックのみを対象にする |
 
 ### 1.4 更新版 README から確定した責任分界
@@ -609,14 +612,17 @@ const py = rect.top  + margin + v * (rect.height - margin * 2);
 
 ### 4.1 楽曲
 
-- `src/game/audio/score.ts` に **1 つの `Score`** を定義する。テンポ 152 BPM、4/4、`ticksPerBeat: 24`、32 小節ループ。
+- `src/game/audio/score.ts` に **1 つの曲**を定義する。イ短調・152 BPM・4/4・`ticksPerBeat: 24`・**32 小節**（8 小節の楽節を A / A' / B / A'' と 4 回）。
 - トラックは役割（`lead` / `bass` / `perc` / `pad` / `fx`）で持つ。楽器名は持たない。
+- **和声進行・主旋律・ベース・ドラムはファイルの上半分に 1 度だけ書かれる**（実装で確定）。下半分の編曲テーブルは「その世代で鳴らすパートはどれか」を選ぶだけで、音の高さも長さも持たない。曲が途切れないのは `MusicClock` が位相を保つからだけでなく、**4 編曲が同じ長さの同じ進行**でできているからでもある。
 - 世代ごとの**編曲**を 4 つ用意する。`bpm` / `beatsPerBar` / 曲長は**必ず同一**に保つ（位相保存の条件）。
   - FC: lead + bass + perc の 3 パート（5 声のうち 2 声を効果音に空ける）
-  - SFC: + pad、ハモリ、リバーブ前提の減衰
-  - PS1: + 対旋律、fx トラック
-  - PS2: 全パート + ストリング系の重ね
-- 世代切替時に `audio.useScore(arrangementFor(generation))` を呼ぶ。音源の差し替えは `GameHost` が自動で行い、`MusicClock` が位相を保つ。**曲は途切れず、音色と編成だけが変わる**。
+  - SFC: + パッド（2 声）、ハモリ、ハイハット
+  - PS1: + 対旋律、楽節頭の一撃（fx トラック）
+  - PS2: 全パート + パッドのオクターブ重ねとベースの倍音下げ
+- **同時発音数の実測**（フェーズ 6）: FC 3 / 5・SFC 7 / 8・PS1 10 / 24・PS2 14 / 48。**どの世代も 1 声以上を空ける**のが編曲の制約になる。`playOneShot` は BGM より低い優先度で声を取るが、埋め尽くされていれば BGM のパートが消えるため。第2世代のパッドを三和音ではなく 2 声にしてあるのはこの理由（三和音だと 8 / 8 になる）。
+- **ハモリは第2世代から**（実装で確定）。第1世代の音源は役割をチャンネルへ 1 対 1 で割り当てるので、`lead` の 2 本目は同じ矩形波 1 を奪い合って片方が消える。
+- 世代切替時に `audio.useScore(arrangementFor(generation))` を呼ぶ。音源の差し替えは `GameHost` が `onSwitch` で自動的に行うので、**ゲーム側がやるのは編曲の差し替えだけ**である。`MusicClock` が位相を保ち、曲は途切れず音色と編成だけが変わる。
 
 ### 4.2 起動と解錠
 
@@ -627,11 +633,11 @@ const py = rect.top  + margin + v * (rect.height - margin * 2);
 継続音の API が無いため、**短い one-shot を先読みで連続予約する**（実機と同じ作り方）。
 
 - `src/game/audio/engine-sound.ts` に `EngineVoiceScheduler` を置く。
-- 毎 `fixedUpdate` で `audio.currentTime + LOOKAHEAD` までを埋めるように、間隔 `interval`（60–110 ms、回転数が高いほど短い）で `playOneShot({ role: 'fx', frequency, durationSeconds: interval * 1.6, velocity, pan })` を予約する。
-- `frequency = baseHz * (0.6 + rpmNorm * 2.4)`、`rpmNorm` は速度とギア（4 段の擬似ギア）から算出。ギアチェンジで周波数が落ちる。
-- `velocity` はスロットル量に連動。
-- `pan` は第3・第4世代（`positional: true`）でのみ効く。
-- **声の奪い合いはそのまま活かす**: FC は 5 声しか無いため、エンジン音が鳴ると BGM のパートが一時的に消える。これは仕様であり、修正しない。ただしエンジン音の予約間隔を FC だけ長めにして BGM が壊滅しないよう調整する。
+- 毎 `fixedUpdate` で `audio.currentTime + 0.2 s` までを埋めるように、間隔 `interval`（60–110 ms、回転数が高いほど短い）で `playOneShot({ role: 'fx', frequency, durationSeconds: interval * 1.6, velocity, pan })` を予約する。
+- `frequency = 46 Hz * (0.6 + rpm * 2.4)`。`rpm` は 4 段の擬似ギアの中で 0 → 1 へ上がり、シフトアップで落ちる**鋸歯**にする（実装で確定）。速度をそのまま周波数へ写すと「ただ高くなるだけ」の音になり、ギアの存在が聞こえない。
+- `velocity` はスロットル量に連動。`pan` は第3・第4世代（`positional: true`）でのみ渡す。
+- **1 更新あたりの予約数に上限を置く**（実装で確定）。タブが裏に回ると `AudioContext.currentTime` が数十秒飛び、追いつこうとして何千発も予約してしまう。上限に当たったら追いつくのを諦め、予約位置を現在時刻へ引き戻す。
+- **声の奪い合いはそのまま活かす**: FC は 5 声しか無いため、エンジン音が鳴ると BGM のパートが一時的に消える。これは仕様であり、修正しない。ただし予約間隔を長めにして BGM が壊滅しないよう調整する — 倍率は `profile.audio.channels` から導く（`min(2.2, max(1, 12 / channels))`）ので、**世代 ID の分岐は 1 か所も要らない**。
 
 ### 4.4 効果音
 
@@ -642,7 +648,9 @@ const py = rect.top  + margin + v * (rect.height - margin * 2);
 | 接触 | 相対速度に応じた 1 発 |
 | 周回通過 / スタートシグナル | `lead` ロールの単音 |
 
-すべて `playOneShot` 経由なので、世代が変われば音色も自動的に変わる。
+すべて `playOneShot` 経由なので、世代が変われば音色も自動的に変わる。**このファイルには「いつ鳴らすか」しか書かない。**
+
+立ち上がり（前ティックとの差）で 1 発だけ鳴らす音（ブレーキの一撃・接触・周回通過・シグナル）と、押している間ずっと一定間隔で鳴らし続ける音（擦過音・路外）を分けて持つ。後者はエンジン音と同じく `AudioContext` の時計で予約するが、**先読みは 1 発ぶんだけ**にする — 長く採ると、離した後にも予約が残って鳴り続ける。
 
 ---
 
@@ -764,7 +772,8 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | `gen4-environment.spec.ts` | 環境マップの画素と定数の突き合わせ: 空の階調とフォグ色が実測値から外れていない・`SUN_DIRECTION` が最輝点と 3° 以内で一致・遠景の帯が切り出しの行そのもので地平線より下が一様に潰れている・帯の U が映り込みと同じ式でカメラの方位から決まりどの画角でも画面を覆いきる・影が専用メッシュで落ち車体に `scale` が入らない・描画順の指定を 1 つも持たない |
 | `capability-contract.spec.ts` | §1.4 の能力契約をコマンド列に対して検査する: FC は 8px 丸め済み・`hardwareBlend` を持つコマンド 0 件・スプライト走査線制限適用済み、SFC は丸め無し。各コマンドの `hardwareBlend` が `generationSupportsHardwareBlend()` を満たし、`generations` と食い違わないこと（実行時 `throw` の事前検出）。世代 ID 直接分岐が無いことは ESLint ルールではなくレビュー項目とする |
 | `palette-budget.spec.ts` | 各世代のビューが使う色定数（`defineGenerationVariant` にまとまっている）を数え、FC が 25 色以内・SFC が 256 色以内に収まる。実画面の色数は §7 フェーズ 8 でスクリーンショットから計測する |
-| `score-phase.spec.ts` | 編曲差し替え前後で `phasePreserved` が真 |
+| `score-phase.spec.ts` | 4 × 4 の全ての切替で `phasePreserved` が真。あわせて 4 編曲のテンポ・拍子・曲長が一致し、**同じ和声進行・同じ主旋律**の上に立っていること、同時発音数が声数の契約を守り効果音のぶんを 1 声以上空けていること |
+| `race-audio.spec.ts` | エンジン音の予約が現在時刻より先で先読みの内側に収まる・時計が飛んでも溜まらない・回転が鋸歯になる・声数の少ない世代ほど間隔が空く。効果音は立ち上がりで 1 発・保持中は繰り返し・離すと止まる。定位を持たない世代へ `pan` を渡さない |
 | `manifest.spec.ts` | manifest の全 URL が `public/` に実在する |
 | `minimap.spec.ts` | **4 世代それぞれのミニマップを組み立て、8 台のマーカーの正規化座標が世代間で完全一致する**（要求「1 つのシステムで動いていることの証明」の機械的な担保）。あわせて全マーカーが矩形内、FC は 8px 丸め済み、マーカー数が常に 8 であること。`build-minimap.mjs` が使う `trackBounds` と実行時の `trackBounds` が同値であること |
 | `flow.spec.ts` | 状態機械が `title → countdown → racing → finished → result → title/countdown` を正しく遷移する。`title` のアトラクトデモがレース開始時のシード生成に影響しない |
@@ -866,12 +875,16 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
   - 初回ロードが 4.41 MB。第4世代のコースメッシュが 1.89 MB を占める（§6.3）
   - 遠景の帯は仰角を線形に画面へ写しているため、水平線から離れるほど本来の tan とずれる。空しか無い範囲なので見えないが、雲の位置は厳密には正しくない
 
-### フェーズ 6 — サウンド
+### フェーズ 6 — サウンド ✅ 実装済み
 
-- `audio/score.ts`（共通 Score ＋ 4 編曲）
-- `audio/engine-sound.ts` / `audio/sfx.ts`
-- `score-phase.spec.ts`、`installAudioUnlock` の導線
+- `audio/score.ts`（1 つの曲 ＋ 4 編曲。イ短調 152 BPM・32 小節）
+- `audio/engine-sound.ts`（4 段の擬似ギア・先読み予約・声数から決まる間隔）/ `audio/sfx.ts`
+- `module.ts` の配線（起動時の `playScore`、`onSwitch` での `useScore`、毎ティックの更新）
+- `score-phase.spec.ts` / `race-audio.spec.ts`、手書きの `AudioService`（`tests/support/audio.ts`）
 - **完了条件**: 世代を切り替えても曲が途切れず、音色と編成だけが変わる。エンジン音が速度に追従し、ブレーキ音が鳴る
+- **残件**（フェーズ 8 で扱う）:
+  - 実際に耳で聴いた調整。音量バランス（BGM と効果音の比）と、第1世代でエンジン音が BGM をどれだけ食うかは実機の音で確かめるしかない
+  - `installAudioUnlock` はフェーズ 0 から入っているが、解錠を促す画面表示はフェーズ 7 のタイトル画面で足す
 
 ### フェーズ 7 — タイトル画面・HUD・ゲームフロー
 
