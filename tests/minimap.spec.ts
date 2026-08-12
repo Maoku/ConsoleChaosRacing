@@ -1,4 +1,9 @@
-import { GENERATION_IDS, HARDWARE_GENERATION_PROFILES } from '@console-chaos/engine';
+import {
+  GENERATION_IDS,
+  HARDWARE_GENERATION_PROFILES,
+  assertHardwareBlendGenerations,
+  generationSupportsHardwareBlend,
+} from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
 
 import { stepRace } from '../src/game/sim/race.js';
@@ -16,6 +21,7 @@ import {
   defaultMinimapRect,
   fullScreenMinimapRect,
 } from '../src/game/view/shared/minimap.js';
+import { supportsTranslucency } from '../src/game/view/shared/variants.js';
 
 function raceAfter(ticks: number) {
   const state = createRaceState({ seed: 20260812, autoPilot: true });
@@ -113,8 +119,9 @@ describe('ミニマップ', () => {
   it('FC は半透明を一切使わない（能力契約）', () => {
     const state = raceAfter(600);
     const profile = HARDWARE_GENERATION_PROFILES.FC;
-    expect(profile.video.alphaBlend).toBe(false);
-    expect(MINIMAP_LAYOUTS.FC.panelAlpha).toBe(0);
+    expect(profile.video.translucency.kind).toBe('none');
+    expect(supportsTranslucency(profile)).toBe(false);
+    expect(MINIMAP_LAYOUTS.FC.panelBlend).toBeNull();
 
     const view = buildMinimap({
       generation: 'FC',
@@ -123,62 +130,76 @@ describe('ミニマップ', () => {
       rect: defaultMinimapRect('FC', profile),
     });
     // 枠 1 枚 ＋ マーカー 8 枚。影も強調縁も置かない
-    expect(view.sprites).toHaveLength(ENTRANT_COUNT + 1);
-    expect(view.meshes).toHaveLength(0);
-    for (const sprite of view.sprites) {
+    expect(view.markerSprites).toHaveLength(ENTRANT_COUNT);
+    for (const sprite of [view.panelSprite, ...view.markerSprites]) {
       expect(sprite.screenSpace).toBe(true);
       expect(sprite.alphaCutoff).toBeGreaterThan(0);
+      // 半透明のコマンドを 1 つも積まない（translucency.kind === 'none'）
+      expect(sprite.hardwareBlend).toBeUndefined();
     }
+    expect(MINIMAP_LAYOUTS.FC.panelColor).toBeNull();
   });
 
-  it('真色世代（スプライトが描かれない）では板メッシュで同じ矩形を埋める', () => {
+  it('4 世代すべてがスプライト経路で描かれる（0.2.0 でシーン統合された）', () => {
     const state = raceAfter(600);
-    const camera = {
-      projection: 'perspective' as const,
-      position: [0, 2, 8] as const,
-      target: [0, 2, 0] as const,
-      zoom: 8,
-      fovDegrees: 60,
-    };
-
-    for (const generation of ['PS1', 'PS2'] as const) {
+    for (const generation of GENERATION_IDS) {
       const profile = HARDWARE_GENERATION_PROFILES[generation];
-      expect(profile.video.paletteMode).toBe('truecolor');
-
       const view = buildMinimap({
         generation,
         profile,
         state,
         rect: defaultMinimapRect(generation, profile),
-        camera,
       });
 
-      expect(view.sprites).toHaveLength(0);
-      expect(view.meshes.length).toBeGreaterThanOrEqual(ENTRANT_COUNT + 1);
-
-      // すべてのメッシュに対応するマテリアルがあり、必ずテクスチャを持つ
-      const materials = new Map(view.materials.map((material) => [material.id, material]));
-      for (const mesh of view.meshes) {
-        const material = materials.get(mesh.material ?? '');
-        expect(material, `${mesh.id} のマテリアルが無い`).toBeDefined();
-        expect(material!.baseColorTexture, `${mesh.id} が fallback 柄で描かれる`).toBeTruthy();
+      expect(view.markerSprites.length).toBeGreaterThanOrEqual(ENTRANT_COUNT);
+      for (const sprite of [view.panelSprite, ...view.markerSprites]) {
+        expect(sprite.screenSpace).toBe(true);
+        expect(sprite.texture, `${sprite.id} にテクスチャが無い`).toBeTruthy();
+        // 世代固有の hardwareBlend は generations が一致していないと実行時に throw する
+        expect(sprite.generations).toEqual([generation]);
       }
     }
   });
 
-  it('カメラを渡さなければ板メッシュ経路は何も積まない', () => {
-    const state = raceAfter(120);
-    const profile = HARDWARE_GENERATION_PROFILES.PS1;
-    const view = buildMinimap({
-      generation: 'PS1',
-      profile,
-      state,
-      rect: defaultMinimapRect('PS1', profile),
-    });
-    // 描けないことを黙って隠さない。マーカーの論理位置だけは常に求まる
-    expect(view.sprites).toHaveLength(0);
-    expect(view.meshes).toHaveLength(0);
-    expect(view.markers).toHaveLength(ENTRANT_COUNT);
+  it('半透明パネルは世代ごとの実機の作法で指定される', () => {
+    const state = raceAfter(600);
+    const expected: Record<string, string | null> = {
+      FC: null,
+      SFC: 'gen2-color-math',
+      PS1: 'gen3-semitransparency',
+      PS2: 'gen4-gs',
+    };
+
+    for (const generation of GENERATION_IDS) {
+      const profile = HARDWARE_GENERATION_PROFILES[generation];
+      const view = buildMinimap({
+        generation,
+        profile,
+        state,
+        rect: defaultMinimapRect(generation, profile),
+      });
+      const blend = view.panelSprite.hardwareBlend;
+
+      expect(blend?.family ?? null).toBe(expected[generation]);
+      // 能力契約: translucency を持たない世代には半透明を積まない
+      expect(blend === undefined).toBe(!supportsTranslucency(profile));
+      if (blend) {
+        expect(generationSupportsHardwareBlend(generation, blend)).toBe(true);
+        // 他の 3 世代では同じ blend が使えない ＝ 世代固有の作法になっている
+        for (const other of GENERATION_IDS) {
+          if (other === generation) continue;
+          expect(generationSupportsHardwareBlend(other, blend)).toBe(false);
+        }
+        // generations と blend の食い違いは実行時に throw する。積む前に検査しておく
+        expect(() =>
+          assertHardwareBlendGenerations(view.panelSprite.generations, blend),
+        ).not.toThrow();
+      }
+      // マーカーは常に不透明。順位と自機が読めることを半透明より優先する
+      for (const sprite of view.markerSprites) {
+        expect(sprite.hardwareBlend).toBeUndefined();
+      }
+    }
   });
 
   it('生成ツールと実行時が同じ trackBounds を見ている', () => {

@@ -1,4 +1,8 @@
-import { defineGenerationVariant, type GenerationVariant } from '@console-chaos/engine';
+import {
+  defineGenerationVariant,
+  type GenerationVariant,
+  type HardwareBlendCommand,
+} from '@console-chaos/engine';
 
 import type { TrackBounds } from '../../sim/track.js';
 
@@ -23,20 +27,23 @@ export interface MinimapLayout {
   readonly hardEdges: boolean;
   /** 輪郭線の色。テクスチャへ焼き込む */
   readonly lineColor: readonly [number, number, number];
-  /** 背景パネルの色。`panelAlpha` が 0 なら描かない */
-  readonly panelColor: readonly [number, number, number];
   /**
-   * 背景パネルの不透明度 0..1。
+   * 背景パネルの色。`null` ならパネルを置かない。
    *
-   * **エンジン実測**: スプライト面の α は 0.5 のしきい値で「描く／描かない」に
-   * 二値化される（`quantize_fc` / `quantize_sfc` のシェーダに
-   * 「抜きは 0 か 255 しかない」と明記）。板メッシュ側も半透明パスの合成が
-   * 加算なので暗いパネルは作れない。つまり**半透明パネルはこのレンダラーでは
-   * 表現できない**。パネルは不透明で焼き、色のほうを「半透明に見える濃さ」に寄せる。
-   * 0 は「パネルを置かない」を意味する（FC の `alphaBlend: false` 契約）。
+   * テクスチャには**不透明で**焼く。半透明にするのは実行時の `panelBlend` の役目で、
+   * ハードウェアごとの半透明の作法（SFC の color math、PS1 の 4 固定モード、
+   * PS2 の GS プリセット）をそのまま使うためである。
    */
-  readonly panelAlpha: number;
-  /** パネルの縁を落とす幅 [px]。しきい値で切られるので、ぼけではなく角の削れになる */
+  readonly panelColor: readonly [number, number, number] | null;
+  /**
+   * パネルを画面へ合成するときの半透明指定（エンジン 0.2.0 の `HardwareBlendCommand`）。
+   *
+   * `null` は不透明。FC は `translucency.kind === 'none'` なのでパネル自体を置かない。
+   * ここに世代固有の family を書くので、コマンドの `generations` を必ずその世代に絞る
+   * （`assertHardwareBlendGenerations` が食い違いを実行時に弾く）。
+   */
+  readonly panelBlend: HardwareBlendCommand | null;
+  /** パネルの縁を落とす幅 [px]。テクスチャの α 勾配として焼く */
   readonly panelFade: number;
 }
 
@@ -44,8 +51,9 @@ export interface MinimapLayout {
  * 世代ごとの寸法と色。表現の差はここだけに集約し、位置の計算は 4 世代で完全に同じ。
  * 解像度・色数・更新レートの制約を通して同じ 8 台がどう変わるかがそのまま見える。
  *
- * FC にパネルが無いのは能力契約（`alphaBlend: false`）を守るため。輪郭線だけを置く。
- * 他の 3 世代のパネルは不透明で焼く（`panelAlpha` の注記）。
+ * FC にパネルが無いのは能力契約（`translucency.kind === 'none'`）を守るため。輪郭線だけを置く。
+ * SFC 以降は各世代の実機の作法で半透明にする — SFC は RGB555 の color math（加算・half）、
+ * PS1 は 4 固定係数のうち average、PS2 は GS の source-over に不透明度を与える。
  */
 export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGenerationVariant({
   FC: {
@@ -55,8 +63,8 @@ export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGeneratio
     markerSize: 2,
     hardEdges: true,
     lineColor: [252, 252, 252],
-    panelColor: [0, 0, 0],
-    panelAlpha: 0,
+    panelColor: null,
+    panelBlend: null,
     panelFade: 0,
   },
   SFC: {
@@ -66,8 +74,9 @@ export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGeneratio
     markerSize: 3,
     hardEdges: true,
     lineColor: [248, 248, 248],
-    panelColor: [26, 32, 56],
-    panelAlpha: 1,
+    panelColor: [40, 52, 96],
+    // 実機の half color math。main と sub を足して 1/2 にする ＝ 50% の重ね合わせ
+    panelBlend: { family: 'gen2-color-math', operation: 'add', half: true, operand: 'subscreen' },
     panelFade: 0,
   },
   PS1: {
@@ -77,8 +86,9 @@ export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGeneratio
     markerSize: 4,
     hardEdges: false,
     lineColor: [216, 228, 240],
-    panelColor: [22, 30, 42],
-    panelAlpha: 1,
+    panelColor: [30, 42, 60],
+    // 4 固定係数のうち average（0.5B + 0.5F）
+    panelBlend: { family: 'gen3-semitransparency', mode: 'average' },
     panelFade: 0,
   },
   PS2: {
@@ -88,8 +98,9 @@ export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGeneratio
     markerSize: 6,
     hardEdges: false,
     lineColor: [232, 240, 248],
-    panelColor: [18, 26, 42],
-    panelAlpha: 1,
+    panelColor: [22, 32, 52],
+    // GS の alpha blending。任意の不透明度を出せるのは 4 世代でこの世代だけ
+    panelBlend: { family: 'gen4-gs', preset: 'source-over', opacity: 0.62 },
     panelFade: 6,
   },
 });

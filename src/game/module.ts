@@ -1,6 +1,5 @@
 import {
   FIXED_DT_SECONDS,
-  type CameraCommand,
   type GameContext,
   type GameInstance,
   type GameModule,
@@ -58,16 +57,14 @@ export const racingModule: GameModule = {
       buildRenderFrame(frame: RenderFrame) {
         frame.timeSeconds = seconds;
 
-        // フェーズ 1 のカメラは仮。真色世代のミニマップは板メッシュなので、
-        // カメラを先に決めてからビューへ渡す
-        const camera: CameraCommand = {
+        // フェーズ 1 のカメラは仮。世代別ビューが入るまでは何も映さない
+        frame.camera = {
           projection: 'perspective',
           position: [0, 2, 8],
           target: [0, 2, 0],
           zoom: 8,
           fovDegrees: 60,
         };
-        frame.camera = camera;
 
         // 切替中は 2 世代ぶんのコマンドを積む。シムは 1 つのまま
         for (const generation of context.generation.renderGenerations()) {
@@ -86,7 +83,6 @@ export const racingModule: GameModule = {
             state: race,
             rect: fullScreenMinimapRect(profile),
             frameIndex: quantizedFrame(seconds, profile),
-            camera,
           });
         }
       },

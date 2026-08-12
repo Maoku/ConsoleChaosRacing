@@ -47,13 +47,14 @@ function drawMinimap(generation) {
   const projection = minimapProjection(TRACK.bounds, textureRect(layout.size), layout.margin);
   const plot = layout.hardEdges ? raster.hardDot.bind(raster) : raster.dot.bind(raster);
 
-  // 背景パネル（半透明が使える世代のみ）
-  if (layout.panelAlpha > 0) {
+  // 背景パネル。**不透明で焼く** — 半透明にするのは実行時の hardwareBlend の役目で、
+  // 世代ごとの半透明の作法（color math / 固定係数 / GS alpha）をそのまま使うため
+  if (layout.panelColor) {
     for (let y = 0; y < layout.size; y++) {
       for (let x = 0; x < layout.size; x++) {
         const edge = Math.min(x, y, layout.size - 1 - x, layout.size - 1 - y);
         const fade = layout.panelFade > 0 ? Math.min(1, (edge + 0.5) / layout.panelFade) : 1;
-        raster.blend(x, y, layout.panelColor, layout.panelAlpha * fade);
+        raster.blend(x, y, layout.panelColor, fade);
       }
     }
   }
@@ -112,29 +113,6 @@ function drawMarkers() {
   return raster.toPng();
 }
 
-/**
- * 板メッシュ経路（PS1 / PS2）用のマーカー。
- *
- * 真色世代ではスプライトが描かれないため、マーカーは薄い箱メッシュになる。
- * メッシュはアトラスのセルを選べないので、形ごとに 1 枚のテクスチャが要る。
- */
-function drawMarkerTexture(shape) {
-  const size = 16;
-  const raster = new Raster(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (shape === 'round') {
-        const distance = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2);
-        const coverage = Math.min(1, Math.max(0, size / 2 - 0.5 - distance));
-        if (coverage > 0) raster.blend(x, y, WHITE, coverage);
-      } else if (x >= 1 && y >= 1 && x < size - 1 && y < size - 1) {
-        raster.blend(x, y, WHITE, 1);
-      }
-    }
-  }
-  return raster.toPng();
-}
-
 function write(relativePath, buffer) {
   const absolute = join(repoRoot, relativePath);
   mkdirSync(dirname(absolute), { recursive: true });
@@ -155,6 +133,4 @@ for (const generation of GENERATION_IDS) {
 }
 
 write('public/assets/common/markers.png', drawMarkers());
-write('public/assets/common/marker-round.png', drawMarkerTexture('round'));
-write('public/assets/common/marker-square.png', drawMarkerTexture('square'));
 console.log('ミニマップ生成 完了');

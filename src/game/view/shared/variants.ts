@@ -66,15 +66,26 @@ export function profileOf(generation: GenerationId): HardwareGenerationProfile {
 }
 
 /**
- * `SpriteCommand` がその世代で描かれるか。
+ * 半透明合成が使えるか（能力契約 `translucency`）。
  *
- * **エンジン実測**: `createGenerationWebGlRenderer` はスプライト専用の
- * レンダーターゲットを、パレット量子化のある世代（`fixed54` / `rgb555`）にしか確保しない。
- * `truecolor` の PS1 / PS2 ではスプライトのパス自体が走らない。
- * 世代 ID ではなくこの能力で分岐する（`view/shared/billboard.ts` に代替手段）。
+ * エンジン 0.2.0 で `profile.video.translucency` が入り、世代ごとに
+ * 「どういう半透明か」まで表現できるようになった。FC は `kind: 'none'` なので、
+ * 半透明のコマンドを積まないこと自体がゲーム側の責務になる。
+ * `alphaBlend` は互換用の真偽値であり、新しいコードはこちらを見る。
  */
-export function supportsScreenSprites(profile: HardwareGenerationProfile): boolean {
-  return profile.video.paletteMode !== 'truecolor';
+export function supportsTranslucency(profile: HardwareGenerationProfile): boolean {
+  return profile.video.translucency.kind !== 'none';
+}
+
+/**
+ * スプライトがシーンへ統合されるか（`separate-plane` か `scene` か）。
+ *
+ * 0.2.0 で PS1 / PS2 のスプライトが ordering table 経由でシーンへ入り、
+ * **4 世代すべてで `SpriteCommand` が描かれる**ようになった。この関数は分岐のためではなく、
+ * 「スプライト面がメッシュと同じ順序表に乗るか」を知りたい場所（走査線制限・重ね順）で使う。
+ */
+export function spritesComposeIntoScene(profile: HardwareGenerationProfile): boolean {
+  return profile.video.spriteComposition === 'scene';
 }
 
 export { defineGenerationVariant, generationValue };
