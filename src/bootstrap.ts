@@ -15,13 +15,17 @@ import {
 } from '@console-chaos/engine';
 
 import { MANIFEST } from './assets/manifest.js';
+import { arrangementFor } from './game/audio/score.js';
 
 export interface BootOptions {
   canvas: HTMLCanvasElement;
   module: GameModule;
   initialGeneration?: GenerationId;
   seed?: number;
-  /** 起動時に読み込む楽曲。フェーズ 6 までは無音の最小 Score を渡す。 */
+  /**
+   * 起動時に読み込む楽曲。既定は起動世代の編曲で、`GameModule` が
+   * `playScore()` を呼んだ時点で実際に鳴り始める（§4.1）。
+   */
   score?: Score;
 }
 
@@ -31,14 +35,6 @@ export interface BootResult {
   dispose(): void;
 }
 
-/** フェーズ 6 まで使う、音の出ない最小の Score。曲の器だけ用意しておく。 */
-const SILENT_SCORE: Score = {
-  bpm: 152,
-  beatsPerBar: 4,
-  ticksPerBeat: 24,
-  tracks: [],
-};
-
 /**
  * AssetManager → Renderer → AudioService → GameHost の配線（実装計画 §2.4 / フェーズ 0）。
  *
@@ -46,6 +42,7 @@ const SILENT_SCORE: Score = {
  * `installAudioUnlock` の解錠で `resume()` させる（`createNullAudioService` への差し替えはしない）。
  */
 export async function boot(options: BootOptions): Promise<BootResult> {
+  const initialGeneration = options.initialGeneration ?? 'FC';
   const assets = createAssetManager();
   const renderer = await createGenerationWebGlRenderer(options.canvas, {
     assets,
@@ -74,7 +71,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     (globalThis as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (AudioContextCtor) {
     const context = new AudioContextCtor();
-    audio = createGenerationAudioService(context, options.score ?? SILENT_SCORE);
+    audio = createGenerationAudioService(context, options.score ?? arrangementFor(initialGeneration));
     audioUnlock = installAudioUnlock(document, () => audio!.unlock());
   }
 
@@ -84,7 +81,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     input: createKeyboardGamepadSource(),
     assets,
     ...(audio ? { audio } : {}),
-    initialGeneration: options.initialGeneration ?? 'FC',
+    initialGeneration,
     ...(options.seed === undefined ? {} : { seed: options.seed }),
   });
 
