@@ -9,7 +9,7 @@ import type { ViewBuilder, ViewContext } from './context.js';
 import { buildGen1View } from './gen1-fc.js';
 import { buildGen2View } from './gen2-sfc.js';
 import { buildGen3View } from './gen3-ps1.js';
-import { buildPlaceholderView } from './placeholder.js';
+import { buildGen4View } from './gen4-ps2.js';
 
 /**
  * GenerationId → ビューの割り当て（実装計画 §2.1）。
@@ -18,14 +18,15 @@ import { buildPlaceholderView } from './placeholder.js';
  * 「表現手法ごとのモジュール分割」であり、各ビューの中では世代 ID を見ない
  * （見るのは `HardwareGenerationProfile` の能力値と variant テーブル）。
  *
- * まだ実装していない世代は暫定表示（空＋全画面ミニマップ）に割り当ててある。
- * フェーズが進むたびにここを 1 行ずつ差し替えていく。
+ * 4 世代とも専用のビューが揃った。表現手法は
+ * ラスター / アフィン / ordering table の 3D / 深度バッファの 3D と別物だが、
+ * 受け取る `ViewContext` は 4 つとも同じで、シムには誰も触れない。
  */
 const VIEWS: GenerationVariant<ViewBuilder> = defineGenerationVariant({
   FC: buildGen1View,
   SFC: buildGen2View,
   PS1: buildGen3View,
-  PS2: buildPlaceholderView, // フェーズ 5 で view/gen4-ps2.ts へ
+  PS2: buildGen4View,
 });
 
 export function buildGenerationView(frame: RenderFrame, context: ViewContext): void {
