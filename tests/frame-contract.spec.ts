@@ -144,6 +144,32 @@ describe('フレームの契約', () => {
     }
   });
 
+  it('第1世代は前方のライバルを、自機と同じ投影でスプライトにする', () => {
+    // 自機がポールから先頭を守るあいだライバルは後方にしか居ないため、
+    // 前方に居る場合の経路は走行させるだけでは通らない。ここで明示的に作る
+    const state = raceAfter(1500);
+    const player = state.cars[0]!;
+    const rival = state.cars[1]!;
+    rival.s = state.track.wrapS(player.s + 30);
+    rival.lateral = 2;
+
+    const frame = buildFrame('FC', state);
+    const sprites = frame.sprites.filter((sprite) => sprite.id.startsWith('car-sprite-FC-'));
+    const playerSprite = sprites.find((sprite) => sprite.id.endsWith('-0'));
+    const rivalSprite = sprites.find((sprite) => sprite.id.endsWith('-1'));
+
+    expect(playerSprite, '自機のスプライトが無い').toBeDefined();
+    expect(rivalSprite, '前方 30 m のライバルが描かれていない').toBeDefined();
+    // 遠い車ほど小さく、画面の上に来る
+    expect(rivalSprite!.size[0]).toBeLessThan(playerSprite!.size[0]);
+    expect(rivalSprite!.position[1]).toBeLessThan(playerSprite!.position[1]);
+    // ライバルは赤（セル 3..5）、自機は黄（セル 0..2）
+    expect(rivalSprite!.cell).toBeGreaterThanOrEqual(3);
+    expect(playerSprite!.cell).toBeLessThan(3);
+    // 積む順は登録順の逆。自機が最後＝最前面に残る
+    expect(sprites[sprites.length - 1]!.id).toBe('car-sprite-FC-0');
+  });
+
   it('第3世代のフレームが三角形予算に収まる', () => {
     const frame = buildFrame('PS1', raceAfter(1500));
     // セクター 3 つ ＋ 車 8 台。§6.3 の予算は 20,000 tri/frame
