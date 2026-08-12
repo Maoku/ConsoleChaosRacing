@@ -5,11 +5,7 @@ import {
   type RenderTextureAsset,
 } from '@console-chaos/engine';
 
-import {
-  CAR_LIVERIES,
-  CAR_MODELS,
-  carLiveryTexture,
-} from '../game/view/shared/car-model.js';
+import { CAR_MODELS, carTextureFor } from '../game/view/shared/car-model.js';
 import {
   TRACK_MESH_LODS,
   trackSectorAsset,
@@ -17,20 +13,13 @@ import {
 } from '../game/view/shared/track-mesh.js';
 
 /**
- * 車のテクスチャもテーブルから導く。リバリーを持つ世代は 8 枚、
- * 持たない世代は素の base color 1 枚。枚数を変えたときの登録漏れを構造的に防ぐ。
+ * 車のテクスチャもテーブルから導く。塗装テクスチャは無彩色 1 枚で全車が共有し、
+ * 車体色は `MeshCommand.color` の乗算で決まる（`car-model.ts` の `CAR_PAINT`）。
  */
 const carTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
-  const model = CAR_MODELS[generation];
-  if (!model) return [];
-  const livery = CAR_LIVERIES[generation];
-  const urls = livery
-    ? Array.from({ length: livery.count }, (_unused, entrant) =>
-        carLiveryTexture(generation, entrant),
-      ).filter((url): url is string => url !== null)
-    : [model.texture];
+  if (!CAR_MODELS[generation]) return [];
   // メッシュが参照するテクスチャなので flipY: false（下の textures のコメントを参照）
-  return urls.map((url) => ({ url, wrap: 'clamp' as const, flipY: false }));
+  return [{ url: carTextureFor(generation), wrap: 'clamp' as const, flipY: false }];
 });
 
 /**

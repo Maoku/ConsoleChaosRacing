@@ -14,8 +14,8 @@
     "prepare:cars": "node tools/prepare-cars.mjs",
     "build:minimap": "tsx tools/build-minimap.mjs",
     "build:track": "tsx tools/build-track-mesh.mjs",
-    "build:liveries": "tsx tools/build-car-liveries.mjs",
-    "build:assets": "npm run build:minimap && npm run build:track && npm run build:liveries"
+    "build:paint": "tsx tools/build-car-paint.mjs",
+    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint"
   },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"

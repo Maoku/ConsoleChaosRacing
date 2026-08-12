@@ -41,50 +41,47 @@ export function carModelFor(generation: GenerationId): CarModel | null {
 }
 
 /**
- * エントラントごとの塗り分け（リバリー）の設定。
+ * 車体色の作り方（実装計画 §3.4）。
  *
- * 車テクスチャには赤いリバリーが焼き込まれているので、`MeshCommand.color` の乗算では
- * 8 台を見分けられない（黄を掛けても青が落ちて赤が残るだけ）。彩度のある画素だけ
- * 色相を差し替えたテクスチャを `tools/build-car-liveries.mjs` が焼く。
+ * base color には赤いリバリーが焼き込まれているので、`MeshCommand.color` の乗算では
+ * 8 台を見分けられない（黄を掛けても青が落ちて赤が残るだけ）。塗装を無彩色にした
+ * テクスチャを 1 枚だけ焼き（`tools/build-car-paint.mjs`）、乗算をそのまま車体色にする。
  *
- * **このテーブルを生成ツールと manifest とビューが共有する。** 枚数や寸法を変えたときに
- * 登録漏れが起きないよう、URL は必ず `carLiveryTexture()` から引く。
+ * **色は実行時のパラメータ 1 つ**になるので、テクスチャは全車で 1 枚を共有でき、
+ * マテリアルも 1 つで済む。色を変えるのに焼き直しは要らない。
+ *
+ * 引き換えに、タイヤ・窓といった無彩色のディテールも車体色に染まる。シェーダの合成は
+ * `texture * uBaseColorFactor` の素直な乗算で、部位ごとにマスクを掛ける口が無いため
+ * （`topColorTexture` は法線が上向きかで切り替わる地形用の仕組み）。
+ * 元が暗いので「影のかかったホイール」として読める範囲に収まっている。
  */
-export interface CarLivery {
-  /** 塗り替えの元。`public/` からの相対 */
+export interface CarPaint {
+  /** 塗装テクスチャの元。`public/` からの相対 */
   readonly source: string;
-  /** 出力する一辺 [px]。元より大きいときは整数倍のボックス縮小で落とす */
+  /** 出力する一辺 [px]。元より小さいときは整数倍のボックス縮小 */
   readonly size: number;
-  /** 枚数（＝出走台数） */
-  readonly count: number;
-  readonly directory: string;
+  /** 出力先。これを manifest とマテリアルが参照する */
+  readonly texture: string;
 }
 
-export const CAR_LIVERIES: GenerationVariant<CarLivery | null> = defineGenerationVariant({
+export const CAR_PAINT: GenerationVariant<CarPaint | null> = defineGenerationVariant({
   FC: null,
   SFC: null,
   PS1: {
     source: 'assets/gen3/textures/car_base_color.png',
     size: 256,
-    count: 8,
-    directory: 'gen3',
+    texture: 'assets/gen3/textures/car_paint.png',
   },
-  // 第4世代はフェーズ 5 で、そのときの寸法とあわせて決める
-  //（1024² のまま 8 枚焼くと 10 MB になり、初回ロードの予算に入らない）
-  PS2: null,
+  PS2: {
+    source: 'assets/gen4/textures/car_base_color.png',
+    size: 512,
+    texture: 'assets/gen4/textures/car_paint.png',
+  },
 });
 
-/** エントラント番号 → リバリーのテクスチャ URL。リバリーが無い世代は null */
-export function carLiveryTexture(generation: GenerationId, entrant: number): string | null {
-  const livery = generationValue(CAR_LIVERIES, generation);
-  if (!livery) return null;
-  const index = ((entrant % livery.count) + livery.count) % livery.count;
-  return `assets/${livery.directory}/textures/car_livery_${index}.png`;
-}
-
-/** 実際に貼るテクスチャ。リバリーがあればそれ、無ければ素の base color */
-export function carTextureFor(generation: GenerationId, entrant: number): string {
-  return carLiveryTexture(generation, entrant) ?? carModelFor(generation)?.texture ?? '';
+/** 実際に貼るテクスチャ。塗装テクスチャがあればそれ、無ければ素の base color */
+export function carTextureFor(generation: GenerationId): string {
+  return generationValue(CAR_PAINT, generation)?.texture ?? carModelFor(generation)?.texture ?? '';
 }
 
 /**
