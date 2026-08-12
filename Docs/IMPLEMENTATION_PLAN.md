@@ -1,11 +1,12 @@
 # ConsoleChaosRacing 実装計画書
 
-`Docs/PLAN.md`（要求仕様）に対する実装計画。同梱エンジン `reference/console-chaos-engine-0.1.0.tgz`（`@console-chaos/engine@0.1.0`）と `public/assets/` の既存アセットを実測したうえで作成している。
+`Docs/PLAN.md`（要求仕様）に対する実装計画。同梱エンジン `reference/console-chaos-engine-0.2.0.tgz`（`@console-chaos/engine@0.2.0`）と `public/assets/` の既存アセットを実測したうえで作成している。
 
 - 対象: 1 アプリで FC / SFC / PS1 / PS2 の 4 世代表現を切り替えられるサーキットレース
 - 不変条件: **シミュレーションは 1 つ。世代は表示と入出力の作法だけを変える**
 - 作成日: 2026-08-12
 - 更新: 2026-08-12（エンジン導入完了・更新版 README を反映・`car-conversion.json` のパス修正を反映・§9 の決定事項 6 項目を反映）
+- 更新: 2026-08-12（フェーズ 0・1 の実装完了を反映。**エンジン 0.2.0 への更新を反映** — スプライトのシーン統合・`HardwareBlendCommand`・第3世代の 12 スロット ordering table）
 
 ---
 
@@ -16,7 +17,7 @@
 | 物 | 場所 | 状態 |
 | --- | --- | --- |
 | 要求仕様 | `Docs/PLAN.md` | 確定 |
-| エンジン | `@console-chaos/engine@0.1.0`（`reference/*.tgz` から導入済み） | ESM / ES2022 / WebGL2 必須。`package.json` / `package-lock.json` あり |
+| エンジン | `@console-chaos/engine@0.2.0`（`reference/*.tgz` から導入済み） | ESM / ES2022 / WebGL2 必須。`package.json` / `package-lock.json` あり。0.1.0 からの変更は `RELEASE_NOTES.md` |
 | 車ソース GLB | `data/gen3_car.glb`, `data/gen4_car.glb` | 変更禁止 |
 | 変換済み車モデル | `public/assets/gen{3,4}/models/car.glb` | 978 tri / 13,618 tri、前方 `-X`。**skin・animation・material・image をすべて持たない**（変換で除去済み） |
 | 車テクスチャ | `public/assets/gen{3,4}/textures/car_base_color.png` | 256² / 1024² |
@@ -40,16 +41,20 @@
 
 配布物の `dist/` を読んで確認した事実。設計はこれを前提に組む。
 
-> 導入済みパッケージの `dist/` は tarball と**バイト一致**（`index.js` の SHA-256 が同一）であり、更新されたのは README のみ。したがって以下の実測結果はすべて有効。
+> 0.1.0 時点の実測に、フェーズ 0・1 の実装で確かめた事実と、**0.2.0 で変わった点**を反映している。
+> 「（0.2.0）」と書いた行は 0.2.0 で挙動が変わった、または新しく使えるようになったもの。
+> 0.2.0 の追加フィールドはすべて省略可能で、旧 `blendMode` も互換入力として残るため、
+> 0.1.0 向けに書いたコマンドはそのまま動く。
 
 | 事実 | 影響 |
 | --- | --- |
 | `RasterSurfaceCommand` は `profile.video.rasterScroll` が真の世代（**FC のみ**）でしか描かれない | 第1世代のラスタースクロールは FC 専用パス |
 | `AffineSurfaceCommand` は `profile.video.affinePlane` が真の世代（**SFC のみ**）でしか描かれない | 第2世代のアフィン変換は SFC 専用パス |
 | `OverlayCommand`（text/rect）は **Canvas 2D レンダラーでしか描画されない**。`createGenerationWebGlRenderer` は overlays を無視する | **HUD をテキストコマンドで作れない**。スクリーン空間スプライト＋自前フォントアトラスで作る（§3.5） |
-| **`SpriteCommand` は FC / SFC でしか描かれない**（フェーズ 1 で実測・追記）。`createGenerationWebGlRenderer` はスプライト専用のレンダーターゲットを `paletteMode` が `fixed54` / `rgb555` の世代にしか確保せず（`generation-pipeline` の `o[p] = g ? … : null`）、`truecolor` の PS1 / PS2 ではスプライトのパス自体が走らない | **HUD とミニマップをスプライトだけで組めない**。真色世代はカメラ前面の薄い箱メッシュ（板）で同じ矩形を埋める。分岐は世代 ID ではなく `profile.video.paletteMode` から導く（`view/shared/billboard.ts`） |
-| **半透明はどの経路でも作れない**（フェーズ 1 で実測・追記）。スプライト面の α は 0.5 のしきい値で二値化され（`quantize_fc` / `quantize_sfc` に「抜きは 0 か 255 しかない」と明記）、メッシュの半透明パス（`blendMode: 'alpha'`）は実際には**加算合成**される | 「半透明パネル」は不透明で焼き、色のほうを半透明に見える濃さに寄せる。§3.6 のミニマップ variant 表はこの方針で実装済み |
-| 板メッシュの前後関係は**距離の殻**で作る。深度バッファの無い世代ではメッシュがカメラからの距離の降順に並ぶため、画面隅の要素は中央より遠く判定される | HUD の重ね順は `layer` ではなく距離で決める。パネルは全要素の最遠点より奥の殻に置く（`enclosingDistance()`） |
+| `SpriteCommand` は **4 世代すべてで描かれる**（0.2.0）。`profile.video.spriteComposition` が `separate-plane`（FC / SFC）か `scene`（PS1 / PS2）かで合成の経路だけが変わる | HUD もミニマップも 1 つのスプライト経路で書ける。分岐が要る場所（走査線制限・重ね順）は世代 ID ではなく `spriteComposition` を見る |
+| 半透明は `HardwareBlendCommand` で世代ごとの作法を明示する（0.2.0）。`profile.video.translucency` が `none`（FC）/ `color-math`（SFC）/ `fixed-rate`（PS1・4 固定モード）/ `gs-alpha`（PS2）| 「半透明パネル」は各世代の実機の作法で出す。`generations` と blend の family が食い違うと `assertHardwareBlendGenerations` が **throw** するので、コマンドの `generations` は必ずその世代に絞る |
+| 第3世代の描画順は **12 スロットの ordering table**（0.2.0）。既定は opaque world が 1..8、半透明が 9、スクリーン空間スプライトが 10、debug が 11。同じスロット内では登録順が安定して保たれる | HUD は積んだ順がそのまま重ね順になる。`orderTableIndex` で固定スロット、`polygonSortRange` で三角形単位の安定 partition 範囲を指定できる |
+| 旧 `blendMode` は互換入力として維持され、内部で portable blend へ変換される（0.2.0） | 既存コードは動くが、世代表現を出したい箇所は `hardwareBlend` へ移す |
 | `MeshCommand.material` は必須。フレームに同 id の `MaterialCommand` が無いと `throw` する | すべてのメッシュに material を必ず積む |
 | `SpriteCommand.texture` は**アトラス URL**として解決される（`manifest.atlases` に登録が必要）。単体テクスチャは不可 | `cars.png` と HUD フォントはアトラス登録する |
 | 非スキンメッシュのテクスチャは GLB からは引かれない。`MaterialCommand.baseColorTexture`（URL）で指定する | 車の base color は manifest とマテリアルの両方に書く。runtime GLB は material も image も持たないので**指定を忘れると fallback 柄になる** |
@@ -57,14 +62,14 @@
 | `MeshCommand.asset` に `manifest.models` の URL を指定するとその GLB の全プリミティブを描く | コースメッシュも GLB として供給できる |
 | `TransformCommand` の回転は `rotationY` のみ。X/Z 軸の傾きは表現できない | バンク角つきコースは**メッシュを事前生成**するしかない（`tools/build-track-mesh.mjs`） |
 | `quadMesh` は XZ 平面・上向き・`[-1,1]`。`geometry.kind:'quad'` は `halfSize` で XZ にスケールされる | 平坦な路面の暫定表現には使えるが、傾けられない |
-| PS1 は `depthBuffer:false`。レンダラーは深度バッファが無い世代でメッシュを距離順（奥→手前）に並べ替える。`MaterialCommand.polygonSort` / `RenderModelAsset.polygonSort` でポリゴン単位ソートも可能 | 第3世代は面のちらつきが出る前提で組む（当時の表現そのもの） |
+| PS1 は `depthBuffer:false`。0.2.0 では距離順のソートに代えて **view-space depth に基づく 12 スロットの安定 ordering table** を走査する。`MaterialCommand.polygonSort` / `RenderModelAsset.polygonSort` に加えて `polygonSortRange` で三角形単位の安定 partition 範囲を指定できる | 第3世代は面のちらつきが出る前提で組む（当時の表現そのもの）。前後関係を確実にしたい要素は `orderTableIndex` で固定スロットへ置く |
 | `rasterSurfaces` / `affineSurfaces` は**背景の後・メッシュの前**に描かれる | 路面サーフェス上に車スプライトを重ねられる |
 | ラスタールックアップは **8bit に量子化**されて GPU に渡る（`createRasterLookupEncoder`）。center / width / sourceV / brightness の各値が 1/255 刻み | 近距離行の路面幅が段付きになる。当時の HDMA テーブルと同じ性質なので**そのまま採用する** |
 | `RasterSurfaceCommand` の scanline `width` は **(0, 1] に制限**され、範囲外は `throw` | 第1世代の描画距離に上限が生まれる（§3.2 で数式化） |
 | `AffineSurfaceCommand` には幅の制限が無い | 第2世代は描画距離を伸ばせる |
 | 音声は `createGenerationAudioService` が `profile.audio.synth` ごとに音源を登録し、`GameHost` が世代切替時に自動で差し替える。`MusicClock` により**位相は保たれる** | 曲データは 1 つ。編曲だけ `useScore` で差し替える |
 | 継続音の API は無い。`playOneShot` の連続予約のみ | エンジン音は短い one-shot の連続再生で作る（実機の作り方と同じ）。§4.3 |
-| `@console-chaos/engine-testkit` は同梱されていない | テストは自前の手動ループホストか、純ロジックのみを対象にする |
+| `@console-chaos/engine-testkit` は同梱されていない（0.2.0 でも tarball には含まれない） | テストは自前の手動ループホストか、純ロジックのみを対象にする |
 
 ### 1.4 更新版 README から確定した責任分界
 
@@ -82,7 +87,9 @@
 | `paletteBlockSize` | 16px | 8px | – | – | 背景・スプライトの色分けをこのブロック境界に合わせる |
 | `spritesPerScanline` | 8 | 32 | 制限なし | 制限なし | `applyScanlineLimit()` を呼び、結果を**描画と当たり判定の両方**に反映する |
 | `tileSnap` | 8px | 1px | – | – | FC は背景・スプライトの配置座標を 8px に丸める |
-| `alphaBlend` | 不可 | 可 | 可 | 可 | FC では半透明・加算を一切積まない |
+| `alphaBlend` | 不可 | 可 | 可 | 可 | 互換用の真偽値。新しいコードは `translucency` を見る |
+| `translucency` | `none` | `color-math`（RGB555 加算・減算・half・固定色） | `fixed-rate`（average / add / subtract / quarter-add・OT 12 スロット） | `gs-alpha`（source/destination/固定 alpha） | 半透明は `HardwareBlendCommand` で世代の作法どおりに書く。FC には一切積まない。検証は §6.2 の `capability-contract.spec.ts` |
+| `spriteComposition` | `separate-plane` | `separate-plane` | `scene` | `scene` | スプライトが独立面か ordering table 経由かの違い。積み方は同じでよいが、重ね順の根拠が変わる |
 
 **世代差の書き方の指針（README の推奨）**
 
@@ -239,7 +246,7 @@ Docs/
 エンジンは導入済み。`package.json` は現在この状態:
 
 ```json
-{ "dependencies": { "@console-chaos/engine": "file:reference/console-chaos-engine-0.1.0.tgz" } }
+{ "dependencies": { "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz" } }
 ```
 
 フェーズ 0 で `name` / `type: "module"` / `scripts` / devDependencies（typescript・vite・vitest）を追記する。`file:` 参照のため、tarball を差し替えたときは `npm install` の再実行が必要になる点だけ運用として押さえておく。
@@ -310,7 +317,8 @@ Docs/
 | 信号 / CRT | rf（最も滲む） | composite | svideo | component |
 | 色 | 固定 54 色 / 同時 25 | rgb555 / 同時 256 | truecolor | truecolor |
 | スプライト/走査線 | **8** | 32 | 無制限 | 無制限 |
-| 半透明 | 不可 | 可 | 可 | 可 |
+| スプライト合成 | 独立面 | 独立面 | シーン統合（OT） | シーン統合（depth） |
+| 半透明 | 不可 | RGB555 color math | 4 固定係数モード | GS alpha |
 | ラスタースクロール | **可** | 不可 | 不可 | 不可 |
 | アフィン面 | 不可 | **可** | 不可 | 不可 |
 | 深度バッファ | 無 | 無 | **無** | **有** |
@@ -378,7 +386,7 @@ zMax = WIDTH_MAX * TEX_W * focal / W        （WIDTH_MAX は安全マージン�
   - `maxSimultaneousColors: 25` — 54 色への量子化はエンジンが行うが**同時 25 色は自動では守られない**。半透明・グラデーション・色数の多い合成を積まない。検証は §6.2 の色数カウント。
   - `paletteBlockSize: 16` — 遠景と路面の色の切り替わりを 16px ブロック境界に合わせる。
   - `tileSnap: 8` — 遠景のスクロール量とスプライトの配置座標を **8px に丸める**。`Math.round(x / 8) * 8`。ラスターサーフェスの scanline 値はこの対象外（走査線単位のスクロールが第1世代の売りであるため）。
-  - `alphaBlend: false` — 落ち影・半透明を一切積まない。影は単色のスプライトかドット抜きで表現する。
+  - `translucency: { kind: 'none' }` — 落ち影・半透明を一切積まない（`hardwareBlend` を付けたコマンドを 1 つも作らない）。影は単色のスプライトかドット抜きで表現する。
 
 > README も「疑似3Dや曲面道路は `RasterSurfaceCommand` の scanline table で表現する。各走査線の source 位置・幅・明るさを変え、`rasterScroll` pass で水平スクロールや遠近を作る」と明記しており、本節の設計と一致する。
 
@@ -404,8 +412,8 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
 - **帯の粒度**: まずは 1 行 = 1 サーフェスで実装する（路面帯 ≒ 120 行 ⇒ 120 ドローコール）。フレーム時間が予算（§6.3）を超えたら 2 行 / 4 行の帯に落とす。粒度は定数 1 つで切り替えられるようにしておく。
 - **描画距離**: 幅の制限が無いので 200 m 以上まで伸ばせる。遠方は `BackgroundCommand.fogDensity` と `brightness` で海の色へ溶かす。
 - **遠景**: 第1世代と同じ `coast.png`（SFC 版）だが、色数と `parallax` の段数を増やす。
-- **車**: 32 スプライト/走査線なので制限は実質かからない。半透明が使えるので**落ち影**を薄いスプライトで置く。ステアフレームは 12Hz 量子化。
-- **能力契約**: `tileSnap: 1` なので座標を丸めない（FC との差がそのまま「滑らかさ」の差になる）。`paletteBlockSize: 8`、`maxSimultaneousColors: 256`、`alphaBlend: true`。
+- **車**: 32 スプライト/走査線なので制限は実質かからない。半透明は RGB555 の color math（`{ family: 'gen2-color-math', operation: 'add', half: true }` ＝ 実機の 50% 重ね）で出し、**落ち影**をそれで置く。ステアフレームは 12Hz 量子化。
+- **能力契約**: `tileSnap: 1` なので座標を丸めない（FC との差がそのまま「滑らかさ」の差になる）。`paletteBlockSize: 8`、`maxSimultaneousColors: 256`、`translucency: color-math`。
 
 > README も「地面・道路・床は `AffineSurfaceCommand` の UV origin と X/Y step で 1 枚の texture を変形する `affinePlane` pass が中心。これは 3D mesh ではなく screen-space の疑似3D」と述べており、本節の走査線単位アフィンはその延長にある。
 
@@ -426,8 +434,9 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
 
 **第3世代（PS1）固有**:
 
-- `depthBuffer: false` ⇒ メッシュはレンダラーが距離順に並ぶ。車とコースの前後関係が破綻しないよう、コースを大きな 1 メッシュにせず**セクター分割**（約 50 m ごと）して個別の `MeshCommand` にする。
-- `MaterialCommand.polygonSort: true`（および `RenderModelAsset.polygonSort`）を車とコースに設定し、ポリゴン単位ソートを有効化。
+- `depthBuffer: false` ⇒ メッシュは 12 スロットの ordering table を 0→11 の順に走査して描かれる（既定: opaque world 1..8 / 半透明 9 / スクリーン空間スプライト 10 / debug 11）。車とコースの前後関係が破綻しないよう、コースを大きな 1 メッシュにせず**セクター分割**（約 50 m ごと）して個別の `MeshCommand` にする。
+- `MaterialCommand.polygonSort: true`（および `RenderModelAsset.polygonSort`）を車とコースに設定し、ポリゴン単位ソートを有効化。さらに **路面には `polygonSortRange` を与え、自機は `orderTableIndex: 9` の固定スロットへ置く**（0.2.0 のリリースノートが「プレイヤーが床より奥へ描画される」問題の対処としてこの組み合わせを挙げている）。
+- 半透明を使う箇所は `{ family: 'gen3-semitransparency', mode: … }` の 4 固定モードから選ぶ。任意の不透明度は出せない。
 - `vertexQuantize: 2` と `affineTexture: true` はエンジンが自動適用。**頂点の揺れとテクスチャの歪みを消そうとしない**。
 - `dynamicLight: false` ⇒ ライティングは `LightCommand` の ambient / directional のフォールバックのみ。`MaterialCommand.ambient` / `diffuse` を明るめに調整して焼き込み風にする。
 - `BackgroundCommand.fogDensity` で遠景を切る（当時の描画距離の短さ）。遠景は `coast.png` 相当ではなく単色＋フォグ。
@@ -441,16 +450,19 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
 - `dynamicLight: true` ⇒ `LightCommand` を積む: 太陽（directional、環境マップの太陽位置と一致させる）、ambient、自機周辺の点光源 1 つ（落ち影の生成にも使われる）。
 - `textureFilter: 'linear'` と 640×448 により、同じ車モデルでも第3世代と明確に差が出る。
 - `MaterialCommand.uvScrollY` を路面の陽炎表現などに使う余地を残す。
+- ワールド空間スプライトが `billboard: 'cylindrical' | 'spherical'` と `depthWrite` を選べる（0.2.0）。砂埃・ブレーキ光・観客といったビルボード表現をここで足せる。半透明は `{ family: 'gen4-gs', preset: … }` で任意の不透明度を出せる — **4 世代でこの世代だけ**。
 
 ### 3.5 HUD（全世代共通の仕組み）
 
 `OverlayCommand` は WebGL レンダラーで描画されないため、**自前のビットマップフォントで描く**。
+スクリーン空間スプライトは 0.2.0 で 4 世代すべてに描かれるので、HUD は 1 つの経路で組める
+（PS1 では ordering table の固定スロット 10、PS2 ではシーン末尾へ合成される）。
 
 - `tools/build-font-atlas.mjs` が 8×8 のフォントアトラス `public/assets/common/font.png`（16 列 × 6 行 = 96 文字、ASCII 0x20–0x7F）を生成する。純粋な生成スクリプトなのでリポジトリ内で完結する。
 - `manifest.atlases` に `{ url, columns: 16, rows: 6 }` で登録。
 - `src/game/view/shared/hud.ts` が文字列 → `SpriteCommand[]`（`screenSpace: true`）に変換する。
 - 表示: 順位 / 周回 / ラップタイム / ベストラップ / 速度 / 現在世代。
-- 世代差は色数と配置で出す。FC は単色 2 段、SFC は影付き 2 色、PS1/PS2 は半透明パネル（`alphaBlend` が有効な世代のみ）。
+- 世代差は色数と配置で出す。FC は単色 2 段、SFC は影付き 2 色、PS1/PS2 は半透明パネル。半透明は `translucency` を持つ世代でのみ `hardwareBlend` を付ける。
 - 配置は `SCREEN_SAFE_AREA`（4:3・オーバースキャン 4%）の内側に収める。
 
 ### 3.6 ミニマップ（全世代必須）
@@ -461,7 +473,7 @@ wrap     = 'clamp'                             // V は CPU 側で fract 済み
 
 コース輪郭は事前生成テクスチャ、車マーカーは実行時のスクリーン空間スプライトに分ける。
 
-- **コース輪郭**: `tools/build-minimap.mjs` が `src/game/sim/track.ts` を直接 import し、`TrackSample[]` から俯瞰図 PNG を世代ごとに 1 枚ずつ生成する。実行時に毎フレーム線を引かないのは、エンジンのスクリーン空間プリミティブが `SpriteCommand` しか無く（メッシュはワールド空間のみ）、輪郭を点スプライトで描くと第1世代の 8 スプライト/走査線を即座に食い潰すため。
+- **コース輪郭**: `tools/build-minimap.mjs` が `src/game/sim/track.ts` を直接 import し、`TrackSample[]` から俯瞰図 PNG を世代ごとに 1 枚ずつ生成する。実行時に毎フレーム線を引かないのは、エンジンのスクリーン空間プリミティブが `SpriteCommand` しか無く（メッシュはワールド空間のみ）、輪郭を点スプライトで描くと第1世代の 8 スプライト/走査線を即座に食い潰すため。パネルと輪郭は**不透明で焼き**、半透明にするのは実行時の `hardwareBlend` の役目にする（世代ごとの半透明の作法をそのまま使うため）。
 - **車マーカー**: `common/markers.png`（8×8 の白い丸と白い四角の 2 セル）を `SpriteCommand.color` で色付けして置く。サイズはコマンド側で指定するので、1 枚のアトラスで 4 世代・8 台すべてを賄える。
 - **向き**: コース固定（回転しない）。全体が常に見えていることが「同じコースを 4 通りに描いている」という主張の根拠になるため、自機基準の回転はしない。
 
@@ -486,7 +498,7 @@ const py = rect.top  + margin + v * (rect.height - margin * 2);
 | --- | --- | --- | --- | --- |
 | テクスチャ | `gen1/hud/minimap.png` 56² | `gen2/hud/minimap.png` 72² | `gen3/hud/minimap.png` 88² | `gen4/hud/minimap.png` 176² |
 | 配置 | 右下・**8px グリッド上** | 右下 | 右下 | 右下 |
-| 背景パネル | なし（輪郭線のみ。`alphaBlend:false`） | 半透明パネル | 半透明パネル | 半透明パネル＋縁のぼかし |
+| 背景パネル | なし（輪郭線のみ。`translucency: none`） | 半透明パネル（color math add・half ＝ 50%） | 半透明パネル（固定係数 average） | 半透明パネル＋縁のぼかし（GS source-over・不透明度 0.62） |
 | マーカー | 2×2 px・自機/他車の 2 色 | 3×3 px・影付き | 4×4 px・順位色 | 6×6 px・順位色＋自機に強調縁 |
 | 更新レート | 6 Hz | 12 Hz | 30 Hz | 60 Hz |
 
@@ -643,7 +655,7 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 
 1. 路面が走査線ごとのアフィン変換で描かれ、コーナーで**視界が傾く**
 2. 描画距離が第1世代より明確に長く、遠方がフォグで海に溶ける
-3. 落ち影・半透明が使われている
+3. 落ち影・半透明が RGB555 color math（加算・half）で使われている
 4. 同時色数が第1世代より明確に多い（256 色モード）
 5. 12Hz の更新レートが第1世代（6Hz）と見分けられる
 
@@ -684,7 +696,7 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | `raster-scanline.spec.ts` | 全行の `width ∈ (0,1]`、`brightness ∈ [0,1]`、`scanlines.length === height*4` を満たす（`validateRasterSurface` は例外を投げるため、投げないことを確認） |
 | `affine-surface.spec.ts` | `validateAffineSurface` が全行で通る。`affineUvAt` の CPU 参照と自前の逆算が一致 |
 | `frame-contract.spec.ts` | 各ビューが積んだ全 `MeshCommand.material` に対応する `MaterialCommand` が存在する（実行時 `throw` の事前検出）。あわせて全マテリアルが `baseColorTexture` を持つ（fallback 柄で描かれる事故の検出） |
-| `capability-contract.spec.ts` | §1.4 の能力契約をコマンド列に対して検査する: FC は 8px 丸め済み・半透明コマンド 0 件・スプライト走査線制限適用済み、SFC は丸め無し。世代 ID 直接分岐が無いことは ESLint ルールではなくレビュー項目とする |
+| `capability-contract.spec.ts` | §1.4 の能力契約をコマンド列に対して検査する: FC は 8px 丸め済み・`hardwareBlend` を持つコマンド 0 件・スプライト走査線制限適用済み、SFC は丸め無し。各コマンドの `hardwareBlend` が `generationSupportsHardwareBlend()` を満たし、`generations` と食い違わないこと（実行時 `throw` の事前検出）。世代 ID 直接分岐が無いことは ESLint ルールではなくレビュー項目とする |
 | `palette-budget.spec.ts` | 各世代のビューが使う色定数（`defineGenerationVariant` にまとまっている）を数え、FC が 25 色以内・SFC が 256 色以内に収まる。実画面の色数は §7 フェーズ 8 でスクリーンショットから計測する |
 | `score-phase.spec.ts` | 編曲差し替え前後で `phasePreserved` が真 |
 | `manifest.spec.ts` | manifest の全 URL が `public/` に実在する |
@@ -734,7 +746,7 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 - `tools/build-track-mesh.mjs`（粗 LOD）でコース GLB を生成
 - `tools/prepare-cars.mjs` を実装し、**まず現行の runtime ファイルを再生成して SHA-256 が一致することを確認する**（ツール自体の検証。§2.6）
 - `view/shared/camera.ts` / `view/gen3-ps1.ts`
-- 車モデルの前方軸補正、`polygonSort`、フォグ、セクター分割
+- 車モデルの前方軸補正、`polygonSort` / `polygonSortRange` / `orderTableIndex`、フォグ、セクター分割
 - ミニマップを右下へ縮小配置（PS1 の variant 設定）
 - **完了条件**: 3D で走れる。§6.1 の第3世代基準 1–6 を満たす。`prepare:cars` → `check:cars` が通る。**ミニマップのマーカーと 3D 空間の車の位置が一致する**（世界モデルの目視検証としてここで効く）
 - **なぜ先か**: 最も素直な 3D で世界モデルの妥当性を目視検証でき、以降のフェーズの土台になる
@@ -801,14 +813,14 @@ AI は「理想ライン（`lateral` の目標値をコーナー曲率から生�
 | 第1世代の描画距離が短く「奥に進む」感が出ない | 要求未達 | `focal` を大きく取り（§3.2 の数式）、地平線を高めに置く。それでも不足なら `road.png` を横に広い版として再生成し `TEX_W` を拡大する |
 | 第2世代の per-scanline アフィンが 120 ドローコールで重い | フレーム落ち | 帯粒度を定数化し 2 行 / 4 行へ落とせるようにする。GPU 側は全画面三角形 1 枚なので帯化の効果は大きい |
 | `circuit.png` が直線路タイルのため Mode 7 らしい「マップの回転」が出ない | 第2世代の説得力不足 | `uvStepX` の回転成分で視界の傾きを出す。不足ならコースマップ PNG を生成して切り替える（§3.3 の改善案） |
-| PS1 に深度バッファが無く車がコースに埋まる | 破綻 | コースをセクター分割し、`polygonSort` を有効化。車は常にコースより後に積む |
-| `OverlayCommand` が WebGL で描かれない | HUD が出ない | フォントアトラス方式で解決済み（§3.5）。フェーズ 7 の前提として `build-font-atlas.mjs` を先に用意する |
+| PS1 に深度バッファが無く車がコースに埋まる | 破綻 | コースをセクター分割し、`polygonSort` と `polygonSortRange` を設定。自機は `orderTableIndex: 9` の固定スロットへ置き、路面の partition 範囲より常に後で描く（0.2.0 の修正で推奨された組み合わせ） |
+| `OverlayCommand` が WebGL で描かれない | HUD が出ない | フォントアトラス方式で解決済み（§3.5）。スクリーン空間スプライトは 0.2.0 で 4 世代すべてに描かれる。フェーズ 7 の前提として `build-font-atlas.mjs` を先に用意する |
 | `MeshCommand.material` 欠落で実行時例外 | クラッシュ | `frame-contract.spec.ts` で全コマンドを走査して事前検出 |
 | ラスタールックアップの 8bit 量子化で近距離の路面がガタつく | 品質 | 当時の性質として許容。ただし `widthU` の下限 0.05 を守るよう `camY` / `yTop` を決める |
 | FC の 5 声でエンジン音が BGM を潰す | 音がスカスカ | 世代ごとにエンジン音の予約間隔と `velocity` を変える。FC は間隔を長く、`perc` を間引く編曲にする |
 | `engine-testkit` が無くホストのテストが書けない | テスト不足 | 手書きの `LoopHost`（`now()` を手動で進める）と記録レンダラーを `tests/support/` に自作する |
 | エンジン tarball を Git 管理下に置かない方針（決定事項 §9-5 (c)）のため、新規クローンで `npm install` が失敗する | セットアップの手間・CI が組めない | ルート `README.md` に入手手順と SHA-256 を記載（フェーズ 0）。**受け入れ済みの制約**であり回避策は取らない。CI が必要になった時点で tarball の注入方法を別途決める |
-| tarball を差し替えても `package-lock.json` の見た目が変わらず、古い `node_modules` のまま動く | 原因不明の不具合 | `README.md` に記録した SHA-256 と現物を突き合わせる手順を書く。エンジン更新時は `rm -rf node_modules && npm install` を徹底 |
+| tarball を差し替えても `package-lock.json` の見た目が変わらず、古い `node_modules` のまま動く | 原因不明の不具合 | `README.md` に記録した SHA-256 と現物を突き合わせる手順を書く。エンジン更新時は `rm -rf node_modules && npm install` を徹底。0.1.0 → 0.2.0 ではファイル名が変わるので lockfile にも差分が出た |
 | `maxSimultaneousColors` / `tileSnap` などは自動強制されない能力契約 | 「らしさ」が出ない | §1.4 の表を実装規約として明文化し、`capability-contract.spec.ts` と `palette-budget.spec.ts` で継続的に検査する |
 | 第1世代でミニマップのマーカーが 8 スプライト/走査線を食い、ライバル車が消えすぎる | ゲームが成立しない | マーカーは 2×2 px でミニマップ矩形（56²・約 56 走査線）内に限定されるため、影響は画面右下の帯だけに閉じる。それでも足りない場合はマーカーを縦方向に 1px ずらして走査線を分散させる |
 | ミニマップの俯瞰図テクスチャとマーカー座標がずれる | 証明が成立せず、むしろ逆効果 | 生成ツールが `src/game/sim/track.ts` を直接 import し、`trackBounds` を共有する（実装を複製しない）。`minimap.spec.ts` でツール側と実行時の `trackBounds` の同値性を固定する |
