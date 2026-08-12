@@ -152,8 +152,9 @@ function buildSector(lod, sector) {
 /**
  * 路面アトラス。u 帯ごとに路面 / 縁石 / 草地を描き、v 方向はシームレスに繋がるようにする。
  *
- * `wrap: 'repeat'` で登録し、u は帯の内側に収める。nearest フィルタなので帯どうしの
- * にじみは出ない（第4世代の linear フィルタで使うときは境界に余白が要る）。
+ * `wrap: 'repeat'` で登録し、u は帯の内側に収める。第4世代は linear フィルタなので
+ * 帯の境界がにじむが、`BAND` が各帯の内側 1.5 % を空けてあり、メッシュの UV は
+ * そこまで届かない。ミップマップは使われないので、遠方で帯が混ざることも無い。
  */
 function buildSurfaceTexture(size) {
   const raster = new Raster(size, size);
@@ -232,13 +233,23 @@ for (const generation of GENERATION_IDS) {
     triangles += mesh.triangles;
     bytes += write(`public/${trackSectorAsset(lod, sector)}`, encodeGlb(mesh));
   }
-  const textureBytes = write(`public/${trackSurfaceTexture(lod)}`, buildSurfaceTexture(256));
+  const textureBytes = write(
+    `public/${trackSurfaceTexture(lod)}`,
+    buildSurfaceTexture(lod.textureSize),
+  );
 
+  const drawn = Math.min(lod.sectorCount, lod.visibleRadius * 2 + 1);
   console.log(
     `  合計 ${triangles} tri / ${(bytes / 1024).toFixed(0)} KB` +
       `（1 セクター ${Math.round(triangles / lod.sectorCount)} tri）`,
   );
-  console.log(`  路面アトラス 256² / ${(textureBytes / 1024).toFixed(1)} KB`);
+  console.log(
+    `  同時描画 ${drawn} セクター ＝ ${Math.round((triangles / lod.sectorCount) * drawn)} tri / ` +
+      `前方保証 ${(lod.visibleRadius * (TRACK.length / lod.sectorCount)).toFixed(0)} m`,
+  );
+  console.log(
+    `  路面アトラス ${lod.textureSize}² / ${(textureBytes / 1024).toFixed(1)} KB`,
+  );
 }
 
 console.log('コースメッシュ生成 完了');

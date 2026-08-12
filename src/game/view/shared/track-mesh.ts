@@ -22,18 +22,43 @@ export interface TrackMeshLod {
   readonly segmentsPerSector: number;
   /** 路面を横方向に何分割するか。粗すぎると頂点量子化が「面の波打ち」に見えない */
   readonly roadSpans: number;
+  /** 路面アトラスの一辺 [px]。線形フィルタの世代は解像度を上げる */
+  readonly textureSize: number;
+  /** 自機のセクターから前後いくつ描くか。ここがそのまま描画距離の下限になる */
+  readonly visibleRadius: number;
 }
 
 /**
  * 第3世代は 4 m 刻み。**あえて粗くするのではなく、細かくしすぎない**ことで
  * アフィンテクスチャの歪みと頂点量子化の揺れが画面に出る。
- * 第4世代（1 m 刻み）はフェーズ 5 で追加する。
+ *
+ * 第4世代は 1 m 刻み。頂点量子化もアフィン歪みも無いので、細かさは
+ * **標高とバンクの滑らかさ**にそのまま効く。横分割は第3世代と同じ 6 のままにして、
+ * 差が「縦の刻み・解像度・フィルタ・ライティング」だけから出るようにしてある。
+ *
+ * セクターを 50 に割ってあるのは描画距離のカリングのため。1 セクター 62 m なので
+ * 前後 5 つ（＝ 682 m の窓）でも 13,640 tri に収まり、前方は最低 310 m 保証される。
+ * フォグ（`gen4-ps2.ts` の `FOG_DENSITY`）はその内側で閉じる。
  */
 export const TRACK_MESH_LODS: GenerationVariant<TrackMeshLod | null> = defineGenerationVariant({
   FC: null,
   SFC: null,
-  PS1: { directory: 'gen3', sectorCount: 8, segmentsPerSector: 97, roadSpans: 6 },
-  PS2: null,
+  PS1: {
+    directory: 'gen3',
+    sectorCount: 8,
+    segmentsPerSector: 97,
+    roadSpans: 6,
+    textureSize: 256,
+    visibleRadius: 1,
+  },
+  PS2: {
+    directory: 'gen4',
+    sectorCount: 50,
+    segmentsPerSector: 62,
+    roadSpans: 6,
+    textureSize: 512,
+    visibleRadius: 5,
+  },
 });
 
 export function trackMeshLodFor(generation: GenerationId): TrackMeshLod | null {
@@ -68,15 +93,16 @@ export function sectorAt(lod: TrackMeshLod, s: number, trackLength: number): num
 }
 
 /**
- * 描画するセクターの番号。自機のセクターとその前後を描く。
+ * 描画するセクターの番号。自機のセクターとその前後 `visibleRadius` 個を描く。
  *
- * 1 セクターは約 390 m あり、フォグで切られる描画距離（約 180 m）より長い。
- * 前後 1 つずつあれば、コーナーで隣のセクターが視界に入る場合も埋まる。
+ * 自機はセクターのどこに居るか分からないので、**前方に保証される距離は
+ * `visibleRadius × セクター長`** になる。フォグはその内側で閉じるよう決める
+ * （第3世代は 1 × 387 m、第4世代は 5 × 62 m ＝ 310 m）。
  */
 export function visibleSectors(lod: TrackMeshLod, s: number, trackLength: number): number[] {
   const center = sectorAt(lod, s, trackLength);
   const sectors: number[] = [];
-  for (let offset = -1; offset <= 1; offset++) {
+  for (let offset = -lod.visibleRadius; offset <= lod.visibleRadius; offset++) {
     sectors.push((center + offset + lod.sectorCount) % lod.sectorCount);
   }
   return sectors;

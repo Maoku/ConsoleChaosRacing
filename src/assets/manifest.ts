@@ -1,5 +1,6 @@
 import {
   GENERATION_IDS,
+  HARDWARE_GENERATION_PROFILES,
   type RenderAssetManifest,
   type RenderModelAsset,
   type RenderTextureAsset,
@@ -31,14 +32,18 @@ const carTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) =>
 /**
  * コースメッシュの登録は LOD テーブルから導く。セクター数を変えたときに
  * manifest の書き換えを忘れる、という事故を構造的に無くす。
+ *
+ * `polygonSort` は**能力から決める**。三角形単位の安定ソートは深度バッファの無い
+ * 世代のための仕組みで、有効にするとモデルごとにソート用の作業配列が確保される。
+ * 深度バッファを持つ世代（第4世代）では走査すらされないので、無駄に確保しない。
  */
 const trackModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
   const lod = TRACK_MESH_LODS[generation];
   if (!lod) return [];
+  const needsPolygonSort = !HARDWARE_GENERATION_PROFILES[generation].video.depthBuffer;
   return Array.from({ length: lod.sectorCount }, (_unused, sector) => ({
     url: trackSectorAsset(lod, sector),
-    // 深度バッファの無い世代のために三角形単位の安定ソートを有効にしておく
-    polygonSort: true,
+    ...(needsPolygonSort ? { polygonSort: true } : {}),
   }));
 });
 
