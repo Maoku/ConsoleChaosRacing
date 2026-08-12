@@ -1,7 +1,7 @@
 import type { GenerationId, HardwareGenerationProfile } from '@console-chaos/engine';
 
 import type { CarState, RaceState } from '../../sim/state.js';
-import { quantizedFrame } from './quantize.js';
+import { displayFrameForTick } from './quantize.js';
 
 /**
  * 「見た目の更新レート」のためのラッチ（実装計画 §3 冒頭）。
@@ -42,7 +42,6 @@ export interface DisplayLatch {
     generation: GenerationId,
     profile: HardwareGenerationProfile,
     state: RaceState,
-    seconds: number,
   ): DisplaySnapshot;
 }
 
@@ -65,15 +64,16 @@ export function createDisplayLatch(): DisplayLatch {
   const perGeneration = new Map<GenerationId, DisplaySnapshot>();
 
   return {
-    sample(generation, profile, state, seconds) {
-      const frameIndex = quantizedFrame(seconds, profile);
+    sample(generation, profile, state) {
+      // シムのティックから整数演算で求める。秒から割ると境目で 1 フレーム落ちる
+      const frameIndex = displayFrameForTick(state.tick, profile);
       const previous = perGeneration.get(generation);
       if (previous && previous.frameIndex === frameIndex) return previous;
 
       const hz = profile.video.animationHz;
       const snapshot: DisplaySnapshot = {
         frameIndex,
-        seconds: hz > 0 ? frameIndex / hz : seconds,
+        seconds: hz > 0 ? frameIndex / hz : state.tick / 60,
         cars: state.cars.map(copyCar),
       };
       perGeneration.set(generation, snapshot);

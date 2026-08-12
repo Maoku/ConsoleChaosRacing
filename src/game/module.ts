@@ -66,7 +66,7 @@ export const racingModule: GameModule = {
             generation,
             profile,
             state: race,
-            display: display.sample(generation, profile, race, seconds),
+            display: display.sample(generation, profile, race),
             seconds,
           });
         }

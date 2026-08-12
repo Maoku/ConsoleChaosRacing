@@ -1,4 +1,4 @@
-import type { HardwareGenerationProfile } from '@console-chaos/engine';
+import { FIXED_HZ, type HardwareGenerationProfile } from '@console-chaos/engine';
 
 /**
  * 「見た目の更新レート」の量子化（実装計画 §3 冒頭）。
@@ -38,6 +38,19 @@ export function snapPointToTile(
   profile: HardwareGenerationProfile,
 ): [number, number] {
   return [snapToTile(x, profile), snapToTile(y, profile)];
+}
+
+/**
+ * ティック番号から、その世代の表示フレーム番号を求める。
+ *
+ * 秒からの `quantizedFrame()` と違って整数演算だけで済むので、境目で 1 フレーム
+ * 取りこぼす（60Hz の世代で 60 回のはずが 59 回になる）ことがない。
+ * 表示のラッチはこちらを使う。
+ */
+export function displayFrameForTick(tick: number, profile: HardwareGenerationProfile): number {
+  const hz = profile.video.animationHz;
+  if (!Number.isFinite(hz) || hz <= 0) return tick;
+  return Math.floor((tick * hz) / FIXED_HZ);
 }
 
 /**

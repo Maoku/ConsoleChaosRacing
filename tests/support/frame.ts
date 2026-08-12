@@ -33,7 +33,7 @@ export function buildFrame(
     generation,
     profile,
     state,
-    display: latch.sample(generation, profile, state, seconds),
+    display: latch.sample(generation, profile, state),
     seconds,
   });
   return frame;
