@@ -123,6 +123,26 @@ export class Raster {
     }
   }
 
+  /**
+   * 上下を反転する。
+   *
+   * レンダラーはアトラス画像を `flipY: false` で取り込むため、画像の 1 行目が
+   * スプライトの下端に来る。俯瞰図は画面座標系（Y 下向き）で描いているので、
+   * 書き出しの直前にここで反転して辻褄を合わせる。
+   */
+  flipVertical() {
+    const stride = this.width * 4;
+    const row = Buffer.alloc(stride);
+    for (let y = 0; y < Math.floor(this.height / 2); y++) {
+      const top = y * stride;
+      const bottom = (this.height - 1 - y) * stride;
+      this.pixels.copy(row, 0, top, top + stride);
+      this.pixels.copy(this.pixels, top, bottom, bottom + stride);
+      row.copy(this.pixels, bottom);
+    }
+    return this;
+  }
+
   toPng() {
     return encodePng(this.width, this.height, this.pixels);
   }

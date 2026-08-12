@@ -47,6 +47,9 @@
 | `RasterSurfaceCommand` は `profile.video.rasterScroll` が真の世代（**FC のみ**）でしか描かれない | 第1世代のラスタースクロールは FC 専用パス |
 | `AffineSurfaceCommand` は `profile.video.affinePlane` が真の世代（**SFC のみ**）でしか描かれない | 第2世代のアフィン変換は SFC 専用パス |
 | `OverlayCommand`（text/rect）は **Canvas 2D レンダラーでしか描画されない**。`createGenerationWebGlRenderer` は overlays を無視する | **HUD をテキストコマンドで作れない**。スクリーン空間スプライト＋自前フォントアトラスで作る（§3.5） |
+| **`SpriteCommand` は FC / SFC でしか描かれない**（フェーズ 1 で実測・追記）。`createGenerationWebGlRenderer` はスプライト専用のレンダーターゲットを `paletteMode` が `fixed54` / `rgb555` の世代にしか確保せず（`generation-pipeline` の `o[p] = g ? … : null`）、`truecolor` の PS1 / PS2 ではスプライトのパス自体が走らない | **HUD とミニマップをスプライトだけで組めない**。真色世代はカメラ前面の薄い箱メッシュ（板）で同じ矩形を埋める。分岐は世代 ID ではなく `profile.video.paletteMode` から導く（`view/shared/billboard.ts`） |
+| **半透明はどの経路でも作れない**（フェーズ 1 で実測・追記）。スプライト面の α は 0.5 のしきい値で二値化され（`quantize_fc` / `quantize_sfc` に「抜きは 0 か 255 しかない」と明記）、メッシュの半透明パス（`blendMode: 'alpha'`）は実際には**加算合成**される | 「半透明パネル」は不透明で焼き、色のほうを半透明に見える濃さに寄せる。§3.6 のミニマップ variant 表はこの方針で実装済み |
+| 板メッシュの前後関係は**距離の殻**で作る。深度バッファの無い世代ではメッシュがカメラからの距離の降順に並ぶため、画面隅の要素は中央より遠く判定される | HUD の重ね順は `layer` ではなく距離で決める。パネルは全要素の最遠点より奥の殻に置く（`enclosingDistance()`） |
 | `MeshCommand.material` は必須。フレームに同 id の `MaterialCommand` が無いと `throw` する | すべてのメッシュに material を必ず積む |
 | `SpriteCommand.texture` は**アトラス URL**として解決される（`manifest.atlases` に登録が必要）。単体テクスチャは不可 | `cars.png` と HUD フォントはアトラス登録する |
 | 非スキンメッシュのテクスチャは GLB からは引かれない。`MaterialCommand.baseColorTexture`（URL）で指定する | 車の base color は manifest とマテリアルの両方に書く。runtime GLB は material も image も持たないので**指定を忘れると fallback 柄になる** |

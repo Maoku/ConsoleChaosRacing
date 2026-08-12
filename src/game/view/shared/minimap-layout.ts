@@ -21,17 +21,77 @@ export interface MinimapLayout {
   readonly markerSize: number;
   /** テクスチャをアンチエイリアス無しで描くか（色数制約のある世代） */
   readonly hardEdges: boolean;
+  /** 輪郭線の色。テクスチャへ焼き込む */
+  readonly lineColor: readonly [number, number, number];
+  /** 背景パネルの色。`panelAlpha` が 0 なら描かない */
+  readonly panelColor: readonly [number, number, number];
+  /**
+   * 背景パネルの不透明度 0..1。
+   *
+   * **エンジン実測**: スプライト面の α は 0.5 のしきい値で「描く／描かない」に
+   * 二値化される（`quantize_fc` / `quantize_sfc` のシェーダに
+   * 「抜きは 0 か 255 しかない」と明記）。板メッシュ側も半透明パスの合成が
+   * 加算なので暗いパネルは作れない。つまり**半透明パネルはこのレンダラーでは
+   * 表現できない**。パネルは不透明で焼き、色のほうを「半透明に見える濃さ」に寄せる。
+   * 0 は「パネルを置かない」を意味する（FC の `alphaBlend: false` 契約）。
+   */
+  readonly panelAlpha: number;
+  /** パネルの縁を落とす幅 [px]。しきい値で切られるので、ぼけではなく角の削れになる */
+  readonly panelFade: number;
 }
 
 /**
- * 世代ごとの寸法。表現の差はここだけに集約し、位置の計算は 4 世代で完全に同じ。
+ * 世代ごとの寸法と色。表現の差はここだけに集約し、位置の計算は 4 世代で完全に同じ。
  * 解像度・色数・更新レートの制約を通して同じ 8 台がどう変わるかがそのまま見える。
+ *
+ * FC にパネルが無いのは能力契約（`alphaBlend: false`）を守るため。輪郭線だけを置く。
+ * 他の 3 世代のパネルは不透明で焼く（`panelAlpha` の注記）。
  */
 export const MINIMAP_LAYOUTS: GenerationVariant<MinimapLayout> = defineGenerationVariant({
-  FC: { size: 56, margin: 3, lineWidth: 1, markerSize: 2, hardEdges: true },
-  SFC: { size: 72, margin: 4, lineWidth: 2, markerSize: 3, hardEdges: true },
-  PS1: { size: 88, margin: 5, lineWidth: 2, markerSize: 4, hardEdges: false },
-  PS2: { size: 176, margin: 8, lineWidth: 3, markerSize: 6, hardEdges: false },
+  FC: {
+    size: 56,
+    margin: 3,
+    lineWidth: 1,
+    markerSize: 2,
+    hardEdges: true,
+    lineColor: [252, 252, 252],
+    panelColor: [0, 0, 0],
+    panelAlpha: 0,
+    panelFade: 0,
+  },
+  SFC: {
+    size: 72,
+    margin: 4,
+    lineWidth: 2,
+    markerSize: 3,
+    hardEdges: true,
+    lineColor: [248, 248, 248],
+    panelColor: [26, 32, 56],
+    panelAlpha: 1,
+    panelFade: 0,
+  },
+  PS1: {
+    size: 88,
+    margin: 5,
+    lineWidth: 2,
+    markerSize: 4,
+    hardEdges: false,
+    lineColor: [216, 228, 240],
+    panelColor: [22, 30, 42],
+    panelAlpha: 1,
+    panelFade: 0,
+  },
+  PS2: {
+    size: 176,
+    margin: 8,
+    lineWidth: 3,
+    markerSize: 6,
+    hardEdges: false,
+    lineColor: [232, 240, 248],
+    panelColor: [18, 26, 42],
+    panelAlpha: 1,
+    panelFade: 6,
+  },
 });
 
 export interface MinimapRect {

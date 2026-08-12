@@ -21,6 +21,9 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen3/textures/car_base_color.png', wrap: 'clamp' },
     { url: 'assets/gen4/textures/car_base_color.png', wrap: 'clamp' },
     { url: 'assets/gen4/environment/circuit.png', wrap: 'repeat' },
+    // 板メッシュ経路のマーカー（真色世代はスプライトが描かれない。billboard.ts の注記）
+    { url: 'assets/common/marker-round.png', wrap: 'clamp' },
+    { url: 'assets/common/marker-square.png', wrap: 'clamp' },
   ],
   atlases: [
     { url: 'assets/gen1/sprites/cars.png', columns: 3, rows: 2 },

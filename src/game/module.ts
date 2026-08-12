@@ -1,5 +1,6 @@
 import {
   FIXED_DT_SECONDS,
+  type CameraCommand,
   type GameContext,
   type GameInstance,
   type GameModule,
@@ -7,24 +8,32 @@ import {
 } from '@console-chaos/engine';
 
 import { createRacingActionMap } from './input/bindings.js';
-import { quantizeTime } from './view/shared/quantize.js';
-import { SKY_COLORS, generationValue } from './view/shared/variants.js';
+import { stepRace } from './sim/race.js';
+import { createRaceState } from './sim/state.js';
+import type { VehicleControl } from './sim/vehicle.js';
+import { fullScreenMinimapRect, pushMinimap } from './view/shared/minimap.js';
+import { quantizedFrame } from './view/shared/quantize.js';
+import { SKY_COLORS, generationValue, profileOf } from './view/shared/variants.js';
 
 /**
- * フェーズ 0 の最小モジュール。
+ * ゲームモジュール（実装計画 §2.4）。
  *
- * 4 世代とも背景と 1 個の箱を出し、Q/E で世代が切り替わって CRT の質感が変わることだけを
- * 確認する。シミュレーションはフェーズ 1 で入れ替える。
+ * フェーズ 1 の時点では、シムの可視化はミニマップだけ。専用のデバッグ描画は作らず、
+ * 本番のミニマップを画面いっぱいに出して 8 台の走りを確認する。
+ * 以降のフェーズで各世代のビューを足し、ミニマップは右下へ縮小配置する。
  */
 export const racingModule: GameModule = {
   id: 'console-chaos-racing',
   async create(context: GameContext): Promise<GameInstance> {
     const actions = createRacingActionMap();
+    // タイトル画面が入るまでは、起動直後から AI 8 台のレースを回す
+    const race = createRaceState({ autoPilot: true });
     let seconds = 0;
 
     return {
       fixedUpdate() {
         seconds += FIXED_DT_SECONDS;
+
         const input = actions.sample(
           context.input.snapshot,
           context.generation.profile,
@@ -32,47 +41,54 @@ export const racingModule: GameModule = {
         );
         if (input.genNext.pressed) context.generation.cycle(1);
         if (input.genPrev.pressed) context.generation.cycle(-1);
+
+        // 自機の操作。autoPilot が真の間は無視される
+        const control: VehicleControl = {
+          steer: input.steer,
+          throttle: input.throttle.value,
+          brake: input.brake.value,
+        };
+        if (race.autoPilot && (input.throttle.pressed || input.brake.pressed)) {
+          race.autoPilot = false;
+        }
+
+        stepRace(race, control);
       },
 
       buildRenderFrame(frame: RenderFrame) {
         frame.timeSeconds = seconds;
-        // 切替中は 2 世代分のコマンドが要る。積む内容は世代で変えず、
-        // 見え方の差はレンダラーのプロファイルに任せる。
+
+        // フェーズ 1 のカメラは仮。真色世代のミニマップは板メッシュなので、
+        // カメラを先に決めてからビューへ渡す
+        const camera: CameraCommand = {
+          projection: 'perspective',
+          position: [0, 2, 8],
+          target: [0, 2, 0],
+          zoom: 8,
+          fovDegrees: 60,
+        };
+        frame.camera = camera;
+
+        // 切替中は 2 世代ぶんのコマンドを積む。シムは 1 つのまま
         for (const generation of context.generation.renderGenerations()) {
+          const profile = profileOf(generation);
           const sky = generationValue(SKY_COLORS, generation);
-          const profile = context.generation.profile;
-          const shown = quantizeTime(seconds, profile);
 
           frame.backgrounds.push({
             color: sky.bottom,
             secondaryColor: sky.top,
             generations: [generation],
           });
-          frame.materials.push({
-            id: `probe-${generation}`,
-            color: '#f8d800',
-            generations: [generation],
-          });
-          frame.meshes.push({
-            id: `probe-${generation}`,
-            geometry: { kind: 'box', halfExtents: [0.5, 0.5, 0.5] },
-            transform: {
-              position: [Math.sin(shown) * 2, 0, 0],
-              rotationY: shown * 0.8,
-            },
-            color: '#f8d800',
-            material: `probe-${generation}`,
-            generations: [generation],
+
+          pushMinimap(frame, {
+            generation,
+            profile,
+            state: race,
+            rect: fullScreenMinimapRect(profile),
+            frameIndex: quantizedFrame(seconds, profile),
+            camera,
           });
         }
-
-        frame.camera = {
-          projection: 'perspective',
-          position: [0, 2.2, 6],
-          target: [0, 0, 0],
-          zoom: 6,
-          fovDegrees: 60,
-        };
       },
 
       dispose() {},

@@ -65,5 +65,17 @@ export function profileOf(generation: GenerationId): HardwareGenerationProfile {
   return HARDWARE_GENERATION_PROFILES[generation];
 }
 
+/**
+ * `SpriteCommand` がその世代で描かれるか。
+ *
+ * **エンジン実測**: `createGenerationWebGlRenderer` はスプライト専用の
+ * レンダーターゲットを、パレット量子化のある世代（`fixed54` / `rgb555`）にしか確保しない。
+ * `truecolor` の PS1 / PS2 ではスプライトのパス自体が走らない。
+ * 世代 ID ではなくこの能力で分岐する（`view/shared/billboard.ts` に代替手段）。
+ */
+export function supportsScreenSprites(profile: HardwareGenerationProfile): boolean {
+  return profile.video.paletteMode !== 'truecolor';
+}
+
 export { defineGenerationVariant, generationValue };
 export type { GenerationVariant };

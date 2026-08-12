@@ -27,7 +27,7 @@ import { Raster } from './lib/png.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** 白で描いて、実行時に SpriteCommand.color で色を付ける */
+/** マーカーは白で描き、実行時に SpriteCommand.color で色を付ける */
 const WHITE = [255, 255, 255];
 
 /**
@@ -36,6 +36,10 @@ const WHITE = [255, 255, 255];
  * コースは中心線のポリラインとして描く。56² のミニマップでは 1 画素が約 15 m なので、
  * 路面幅 12 m は 1 画素に満たない。実寸で塗るのではなく、世代ごとに決めた
  * 線幅（`MINIMAP_LAYOUTS`）で引くのが正しい。
+ *
+ * 色はテクスチャへ焼き込む。輪郭とパネルは 1 枚のスプライトで描くため、
+ * 実行時の tint（1 色）では 2 つを別々に色付けできないからである。
+ * 色の定義は `minimap-layout.ts` の 1 か所にある。
  */
 function drawMinimap(generation) {
   const layout = MINIMAP_LAYOUTS[generation];
@@ -43,18 +47,29 @@ function drawMinimap(generation) {
   const projection = minimapProjection(TRACK.bounds, textureRect(layout.size), layout.margin);
   const plot = layout.hardEdges ? raster.hardDot.bind(raster) : raster.dot.bind(raster);
 
-  // 輪郭の外周を先に薄く敷く（第3・第4世代のみ。縁のにじみになる）
+  // 背景パネル（半透明が使える世代のみ）
+  if (layout.panelAlpha > 0) {
+    for (let y = 0; y < layout.size; y++) {
+      for (let x = 0; x < layout.size; x++) {
+        const edge = Math.min(x, y, layout.size - 1 - x, layout.size - 1 - y);
+        const fade = layout.panelFade > 0 ? Math.min(1, (edge + 0.5) / layout.panelFade) : 1;
+        raster.blend(x, y, layout.panelColor, layout.panelAlpha * fade);
+      }
+    }
+  }
+
+  // 輪郭の外周を先に薄く敷く（アンチエイリアスが使える世代のみ）
   if (!layout.hardEdges) {
     for (const sample of TRACK.samples) {
       const [x, y] = minimapPoint(projection, sample.position[0], sample.position[2]);
-      raster.dot(x, y, layout.lineWidth + 2, WHITE, 0.28);
+      raster.dot(x, y, layout.lineWidth + 2, layout.lineColor, 0.28);
     }
   }
 
   // 中心線。1 m 間隔のサンプルをそのまま点として置けば、線幅ぶんで隙間なく繋がる
   for (const sample of TRACK.samples) {
     const [x, y] = minimapPoint(projection, sample.position[0], sample.position[2]);
-    plot(x, y, layout.lineWidth, WHITE, 1);
+    plot(x, y, layout.lineWidth, layout.lineColor, 1);
   }
 
   // スタート/フィニッシュライン。s = 0 の法線方向へ線幅の 3 倍
@@ -64,10 +79,11 @@ function drawMinimap(generation) {
     const worldX = start.position[0] + start.right[0] * (step / projection.scale);
     const worldZ = start.position[2] + start.right[1] * (step / projection.scale);
     const [x, y] = minimapPoint(projection, worldX, worldZ);
-    plot(x, y, Math.max(1, layout.lineWidth - 1), WHITE, 1);
+    plot(x, y, Math.max(1, layout.lineWidth - 1), layout.lineColor, 1);
   }
 
-  return { layout, png: raster.toPng() };
+  // アトラスは flipY:false で取り込まれるので、画面座標系で描いた図を上下反転して渡す
+  return { layout, png: raster.flipVertical().toPng() };
 }
 
 /**
@@ -96,6 +112,29 @@ function drawMarkers() {
   return raster.toPng();
 }
 
+/**
+ * 板メッシュ経路（PS1 / PS2）用のマーカー。
+ *
+ * 真色世代ではスプライトが描かれないため、マーカーは薄い箱メッシュになる。
+ * メッシュはアトラスのセルを選べないので、形ごとに 1 枚のテクスチャが要る。
+ */
+function drawMarkerTexture(shape) {
+  const size = 16;
+  const raster = new Raster(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (shape === 'round') {
+        const distance = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2);
+        const coverage = Math.min(1, Math.max(0, size / 2 - 0.5 - distance));
+        if (coverage > 0) raster.blend(x, y, WHITE, coverage);
+      } else if (x >= 1 && y >= 1 && x < size - 1 && y < size - 1) {
+        raster.blend(x, y, WHITE, 1);
+      }
+    }
+  }
+  return raster.toPng();
+}
+
 function write(relativePath, buffer) {
   const absolute = join(repoRoot, relativePath);
   mkdirSync(dirname(absolute), { recursive: true });
@@ -116,4 +155,6 @@ for (const generation of GENERATION_IDS) {
 }
 
 write('public/assets/common/markers.png', drawMarkers());
+write('public/assets/common/marker-round.png', drawMarkerTexture('round'));
+write('public/assets/common/marker-square.png', drawMarkerTexture('square'));
 console.log('ミニマップ生成 完了');
