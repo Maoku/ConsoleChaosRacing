@@ -16,7 +16,8 @@
     "build:track": "tsx tools/build-track-mesh.mjs",
     "build:paint": "tsx tools/build-car-paint.mjs",
     "build:road": "tsx tools/build-road-texture.mjs",
-    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road"
+    "build:sprites": "tsx tools/build-car-sprites.mjs",
+    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:sprites"
   },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"
