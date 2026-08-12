@@ -47,13 +47,18 @@ function columnRuns(image) {
   return runs;
 }
 
-/** 行帯 `[top, bottom)` のなかで絵のある行の範囲 */
-function rowExtent(image, top, bottom) {
+/**
+ * 矩形 `[left, right] × [top, bottom)` のなかで絵のある行の範囲。
+ *
+ * **絵 1 つずつに掛ける。** 帯（行）全体でまとめて採ると、車ごとに 1 px ずれている
+ * 元絵（第2世代の正面がそう）で接地線が揃わず、傾けたときに車が浮き沈みする。
+ */
+function rowExtent(image, left, right, top, bottom) {
   let first = -1;
   let last = -1;
   for (let y = top; y < bottom; y++) {
     let used = false;
-    for (let x = 0; x < image.width && !used; x++) {
+    for (let x = left; x <= right && !used; x++) {
       used = image.pixels[(y * image.width + x) * 4 + 3] >= OPAQUE;
     }
     if (used) {
@@ -79,26 +84,41 @@ for (const source of CAR_SPRITE_SOURCES) {
   const bandHeight = image.height / rows;
   const metrics = [];
 
+  /** 接地線（絵の下端）を揃えるセル内の行 */
+  const groundRow = Math.round(groundFraction * cell);
+
   for (let row = 0; row < rows; row++) {
-    const [top, bottom] = rowExtent(image, row * bandHeight, (row + 1) * bandHeight);
-    const artHeight = bottom - top + 1;
-    // 接地線（絵の下端）をセルの決まった位置へ揃える
-    const groundRow = Math.round(groundFraction * cell);
-    const destTop = groundRow - artHeight;
-    if (destTop < 0) throw new Error(`${source.from}: 行 ${row} の絵がセルに収まらない`);
-    metrics.push({ artHeight, widths: [] });
+    metrics.push({ heights: [], widths: [] });
 
     for (let column = 0; column < columns; column++) {
       const [left, right] = runs[column];
+      const [top, bottom] = rowExtent(
+        image,
+        left,
+        right,
+        row * bandHeight,
+        (row + 1) * bandHeight,
+      );
+      const artHeight = bottom - top + 1;
+      const destTop = groundRow - artHeight;
+      if (destTop < 0) throw new Error(`${source.from}: セル(${column}, ${row})が収まらない`);
+
       const artWidth = right - left + 1;
       if (artWidth > cell) throw new Error(`${source.from}: 列 ${column} がセル幅を超える`);
       const destLeft = column * cell + Math.round((cell - artWidth) / 2);
       metrics[row].widths.push(artWidth);
+      metrics[row].heights.push(artHeight);
 
       for (let y = 0; y < artHeight; y++) {
         for (let x = 0; x < artWidth; x++) {
           const from = ((top + y) * image.width + left + x) * 4;
-          const to = ((row * cell + destTop + y) * width + destLeft + x) * 4;
+          // **セルの中で上下を入れ替えて書く。** レンダラーはアトラスを flipY: false で
+          // 取り込み、スクリーン空間スプライトのクアッドは画像の上端を下端へ割り当てる
+          // （render/geometry の cell UV と screenSpace の ortho の組み合わせ）。
+          // 素直に置くと車が逆さまに描かれる。反転するのはセルの中だけで、
+          // 行（黄＝自機・赤＝ライバル）の並びはそのまま保つ
+          const destRow = row * cell + (cell - 1 - destTop - y);
+          const to = (destRow * width + destLeft + x) * 4;
           image.pixels.copy(pixels, to, from, from + 4);
         }
       }
@@ -111,8 +131,9 @@ for (const source of CAR_SPRITE_SOURCES) {
   const png = encodePng(width, height, pixels);
   writeFileSync(absolute, png);
 
+  const heights = metrics.flatMap((entry) => entry.heights);
   console.log(
-    `${source.to} ${width}×${height} / 絵の高さ ${metrics.map((m) => m.artHeight).join('・')} px` +
+    `${source.to} ${width}×${height} / 絵の高さ ${Math.min(...heights)}–${Math.max(...heights)} px` +
       ` / 正面の幅 ${metrics[0].widths[1]} px / ${(png.length / 1024).toFixed(0)} KB`,
   );
 }
