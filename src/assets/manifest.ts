@@ -25,6 +25,12 @@ export const MANIFEST: RenderAssetManifest = {
   atlases: [
     { url: 'assets/gen1/sprites/cars.png', columns: 3, rows: 2 },
     { url: 'assets/gen2/sprites/cars.png', columns: 3, rows: 2 },
+    // 生成物（tools/build-minimap.mjs・フェーズ 1）
+    { url: 'assets/common/markers.png', columns: 2, rows: 1 }, // 丸 / 四角。色は SpriteCommand.color
+    { url: 'assets/gen1/hud/minimap.png', columns: 1, rows: 1 },
+    { url: 'assets/gen2/hud/minimap.png', columns: 1, rows: 1 },
+    { url: 'assets/gen3/hud/minimap.png', columns: 1, rows: 1 },
+    { url: 'assets/gen4/hud/minimap.png', columns: 1, rows: 1 },
   ],
   models: [
     { url: 'assets/gen3/models/car.glb', polygonSort: true },
