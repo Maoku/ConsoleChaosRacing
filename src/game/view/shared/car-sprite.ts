@@ -105,6 +105,37 @@ export interface CarSpritePlacement {
 }
 
 /**
+ * ステアフレームへ移る条件（実装計画 8-1）。
+ *
+ * **2 つの閾値の AND** で判定する。片方（横加速度）だけだと、直線での小さな
+ * 修正舵と AI の車線取りが閾値を跨ぎ、6Hz / 12Hz の量子化と重なって
+ * 絵がパタパタ切り替わる。もう片方（コース曲率）を AND で噛ませると、
+ * 直線区間ではどれだけ舵を当てても正面のセルのままになる。
+ *
+ * **ヒステリシスは入れない。** 「ビューは状態を持たない純関数」（§2.1）を崩さない
+ * ためで、二重閾値ではなく AND ゲートで解決する。
+ */
+export interface SteerFrameThresholds {
+  /** これを超える横加速度で傾きのセルへ移る [m/s²] */
+  readonly lateralAccel: number;
+  /** これを超える曲率の区間だけを「カーブ」とみなす [1/m] */
+  readonly curvature: number;
+}
+
+/**
+ * 世代ごとの閾値。更新レートが違うと切り替わりの見え方も違うので、
+ * 6Hz と 12Hz で別々に調整できるよう 1 つの表に出してある。
+ * 擬似3D でない世代（PS1 / PS2）はスプライトを使わないので値は読まれない。
+ */
+export const STEER_FRAME: GenerationVariant<SteerFrameThresholds> = defineGenerationVariant({
+  // 半径 240 m 未満をカーブとみなす。ホームストレートとシケイン間の直線が外れる
+  FC: { lateralAccel: 5, curvature: 1 / 240 },
+  SFC: { lateralAccel: 5, curvature: 1 / 240 },
+  PS1: { lateralAccel: 5, curvature: 1 / 240 },
+  PS2: { lateralAccel: 5, curvature: 1 / 240 },
+});
+
+/**
  * 傾きのセルを選ぶ。1 が正面。
  *
  * ## 列と向きの対応（絵を実測して確定）
@@ -117,14 +148,23 @@ export interface CarSpritePlacement {
  *
  * ## 判定に使う量
  *
- * **横加速度**（`speed × ヨー角速度`）を見る。コース接線に対するヨー角では、
- * 曲がれている間は車体が接線に沿うので値がほぼ 0 になり、コーナーの最中に
- * 絵が正面へ戻ってしまう。横加速度ならコーナーの間ずっと符号が立つ。
+ * 向きを決めるのは**横加速度**（`speed × ヨー角速度`）である。コース接線に対する
+ * ヨー角では、曲がれている間は車体が接線に沿うので値がほぼ 0 になり、コーナーの
+ * 最中に絵が正面へ戻ってしまう。横加速度ならコーナーの間ずっと符号が立つ。
  * `CarState` がこの値を「車体ロールの元」として持っているのもそのため。
+ *
+ * **いつ正面へ戻すか**を決めるのがコース曲率のほうで、こちらは門にしか使わない
+ * （8-1）。直線では絵が正面から動かず、カーブでは横加速度の符号どおりに傾く。
  */
-export function steerCellOffset(car: DisplayCar, threshold = 3.5): number {
-  if (car.lateralAccel > threshold) return 0;
-  if (car.lateralAccel < -threshold) return 2;
+export function steerCellOffset(
+  car: Pick<DisplayCar, 'lateralAccel'>,
+  curvature: number,
+  thresholds: SteerFrameThresholds,
+): number {
+  // 直線区間（κ ≒ 0）ではどれだけ舵を当てても正面のまま
+  if (Math.abs(curvature) < thresholds.curvature) return 1;
+  if (car.lateralAccel > thresholds.lateralAccel) return 0;
+  if (car.lateralAccel < -thresholds.lateralAccel) return 2;
   return 1;
 }
 
@@ -132,6 +172,8 @@ export interface CarPlacementOptions {
   readonly view: RoadView;
   readonly track: Track;
   readonly profile: HardwareGenerationProfile;
+  /** ステアフレームの閾値を引くのに要る（`STEER_FRAME`・8-1） */
+  readonly generation: GenerationId;
   readonly atlas: CarSpriteAtlas;
   /** これより近い車は描かない [m]。路面帯の下端より手前は画面に無い */
   readonly nearClip?: number;
@@ -152,18 +194,22 @@ function place(
   distance: number,
   isPlayer: boolean,
 ): CarSpritePlacement {
-  const { view, atlas } = options;
+  const { view, track, atlas } = options;
   const row = isPlayer ? atlas.player : atlas.rival;
   const size = (atlas.cellMeters * view.camera.focal) / distance;
   const ground = view.rowAtDistance(distance);
   const x = view.centerXAt(distance) + car.lateral * view.scaleAt(distance);
+  // 曲率は車が**いま居る場所**のもの。舵ではなくコースの形が門になる（8-1）
+  const curvature = track.sampleAt(car.s).curvature;
   return {
     entrant: car.entrant,
     isPlayer,
     distance,
     position: [x, ground - (row.groundFraction - 0.5) * size],
     size,
-    cell: row.firstCell + steerCellOffset(car),
+    cell:
+      row.firstCell +
+      steerCellOffset(car, curvature, generationValue(STEER_FRAME, options.generation)),
   };
 }
 

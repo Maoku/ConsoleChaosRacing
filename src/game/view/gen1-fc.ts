@@ -92,7 +92,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   frame.rasterSurfaces.push(buildRoadSurface(view, generation));
 
   // ── スプライト。登録順（＝優先度）は 自機 → ミニマップのマーカー → ライバル車
-  const placement: CarPlacementOptions = { view, track, profile, atlas };
+  const placement: CarPlacementOptions = { view, track, profile, generation, atlas };
   const minimap = buildMinimap({
     generation,
     profile,

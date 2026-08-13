@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
+  STEER_FRAME,
   steerCellOffset,
 } from '../src/game/view/shared/car-sprite.js';
 import type { DisplayCar } from '../src/game/view/shared/display-state.js';
@@ -24,6 +25,7 @@ import { decodePng } from '../tools/lib/png.mjs';
  */
 
 const { columns, rows, cell, groundFraction, heightFraction } = CAR_SPRITE_GEOMETRY;
+const THRESHOLDS = STEER_FRAME.FC;
 /** 描画されたスプライトの上端から見た接地線の行 */
 const GROUND_ROW = Math.round(groundFraction * cell);
 const OPAQUE = 8;
@@ -164,23 +166,28 @@ describe('車スプライトのアトラス', () => {
   }
 
   describe('傾きのセル選び', () => {
+    // 曲率を門にした AND ゲート（8-1）そのものは `car-sprite.spec.ts` が実コースの
+    // 区間で固定する。ここで見るのは**絵とセル番号の対応**だけ — 上の
+    // 「列 0 は車の後ろが左に写る」の検査と、この向きの選び方が食い違わないこと
+    const CORNER = 1 / 60;
+
     it('右コーナーで列 0、左コーナーで列 2 を選ぶ', () => {
       // 列 0 はノーズが右を向いた絵（上のテストで固定してある）。
       // 横加速度が右向き（正）＝右コーナーなので、選ぶのは列 0
-      expect(steerCellOffset(car({ lateralAccel: 8 }))).toBe(0);
-      expect(steerCellOffset(car({ lateralAccel: -8 }))).toBe(2);
-      expect(steerCellOffset(car({ lateralAccel: 0 }))).toBe(1);
+      expect(steerCellOffset(car({ lateralAccel: 8 }), CORNER, THRESHOLDS)).toBe(0);
+      expect(steerCellOffset(car({ lateralAccel: -8 }), CORNER, THRESHOLDS)).toBe(2);
+      expect(steerCellOffset(car({ lateralAccel: 0 }), CORNER, THRESHOLDS)).toBe(1);
     });
 
     it('コーナーの最中はずっと傾いた絵になる', () => {
       // 曲がれている間はコース接線に対するヨー角がほぼ 0 になる。
       // ヨー角で判定すると絵がコーナーの途中で正面へ戻ってしまう
-      expect(steerCellOffset(car({ yaw: 0, lateralAccel: 9 }))).toBe(0);
+      expect(steerCellOffset(car({ yaw: 0, lateralAccel: 9 }), CORNER, THRESHOLDS)).toBe(0);
     });
 
     it('直進では舵を当てていても正面のまま', () => {
-      expect(steerCellOffset(car({ lateralAccel: 1.2 }))).toBe(1);
-      expect(steerCellOffset(car({ lateralAccel: -1.2 }))).toBe(1);
+      expect(steerCellOffset(car({ lateralAccel: 1.2 }), CORNER, THRESHOLDS)).toBe(1);
+      expect(steerCellOffset(car({ lateralAccel: -1.2 }), CORNER, THRESHOLDS)).toBe(1);
     });
   });
 });

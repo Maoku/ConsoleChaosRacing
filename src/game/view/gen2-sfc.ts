@@ -122,6 +122,7 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
     view,
     track,
     profile,
+    generation,
     atlas,
     farClip: RIVAL_DRAW_DISTANCE,
   };
