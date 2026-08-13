@@ -7,7 +7,7 @@ import {
 } from '@console-chaos/engine';
 
 import type { ViewContext } from './context.js';
-import { backdropCommands } from './shared/backdrop.js';
+import { backdropCommands, backdropFor } from './shared/backdrop.js';
 import {
   carSpriteAtlasFor,
   carSpriteCommand,
@@ -46,9 +46,6 @@ const DEPTH_SHADE = 0.16;
 /** 走査線の縞。奇数行をわずかに落とす */
 const SCANLINE_STRIPE = 0.06;
 
-/** 遠景 `coast.png` の実寸 */
-const BACKDROP = { texture: 'assets/gen1/backgrounds/coast.png', width: 512, height: 192 } as const;
-
 /**
  * 走査線制限で落ちたスプライト（実装計画 §3.2）。
  *
@@ -69,8 +66,9 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   const track = state.track;
   const atlas = carSpriteAtlasFor(generation);
   const layout = roadSurfaceFor(generation);
+  const backdrop = backdropFor(generation);
   const player = display.cars[PLAYER_ENTRANT];
-  if (!atlas || !layout || !player) return;
+  if (!atlas || !layout || !backdrop || !player) return;
 
   const view = createRoadView({ profile, camera: FC_CAMERA, track, car: player, layout });
   const origin = track.sampleAt(player.s);
@@ -80,9 +78,9 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
     generation,
     profile,
     view,
-    texture: BACKDROP.texture,
-    textureWidth: BACKDROP.width,
-    textureHeight: BACKDROP.height,
+    texture: backdrop.texture,
+    textureWidth: backdrop.width,
+    textureHeight: backdrop.height,
     sky: generationValue(SKY_COLORS, generation),
     heading: origin.heading,
   })) {

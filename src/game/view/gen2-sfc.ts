@@ -2,7 +2,7 @@ import { NO_ENTITY, type RenderFrame, type SpriteCommand } from '@console-chaos/
 
 import type { ViewContext } from './context.js';
 import { affineBandRows, affineRoadBands } from './shared/affine-surface.js';
-import { backdropCommands } from './shared/backdrop.js';
+import { backdropCommands, backdropFor } from './shared/backdrop.js';
 import {
   carSpriteAtlasFor,
   carSpriteCommand,
@@ -37,9 +37,6 @@ import { PLAYER_ENTRANT, SKY_COLORS, generationValue, rgb01 } from './shared/var
  *    どちらも `carSpriteCommand` と `DisplayLatch` がプロファイルから決めるので、
  *    このファイルには「丸めない」というコードが 1 行も無い。
  */
-
-/** 遠景 `coast.png` の実寸（第1世代と同じ大きさで、色数だけ多い版） */
-const BACKDROP = { texture: 'assets/gen2/backgrounds/coast.png', width: 512, height: 192 } as const;
 
 /**
  * フォグの帯（実装計画 §6.1 第2世代基準 2「遠方がフォグで海に溶ける」）。
@@ -77,8 +74,9 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   const track = state.track;
   const atlas = carSpriteAtlasFor(generation);
   const layout = roadSurfaceFor(generation);
+  const backdrop = backdropFor(generation);
   const player = display.cars[PLAYER_ENTRANT];
-  if (!atlas || !layout || !player) return;
+  if (!atlas || !layout || !backdrop || !player) return;
 
   const view = createRoadView({
     profile,
@@ -95,9 +93,9 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
     generation,
     profile,
     view,
-    texture: BACKDROP.texture,
-    textureWidth: BACKDROP.width,
-    textureHeight: BACKDROP.height,
+    texture: backdrop.texture,
+    textureWidth: backdrop.width,
+    textureHeight: backdrop.height,
     sky: generationValue(SKY_COLORS, generation),
     heading: origin.heading,
   })) {

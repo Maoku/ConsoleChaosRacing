@@ -114,14 +114,51 @@ function render(layout) {
     }
   }
 
-  return encodePng(width, height, pixels);
+  return { png: encodePng(width, height, pixels), pixels };
+}
+
+/**
+ * ユニークな N×N タイルを数える（実装計画 8-2）。
+ *
+ * 実機の BG 面はタイルの実体を 256 種しか置けない。**全画素ユニークな絵は
+ * 当時のハードウェアには焼けない情報量**であり、それが遠方のちらつきになる。
+ * 数えて上限を超えたら生成を失敗させ、実機に無い絵をリポジトリへ入れない。
+ */
+function countUniqueTiles(pixels, width, height, size) {
+  if (width % size !== 0 || height % size !== 0) {
+    throw new Error(`${width}×${height} を ${size} px タイルで割り切れない`);
+  }
+  const tiles = new Set();
+  for (let tileY = 0; tileY < height / size; tileY++) {
+    for (let tileX = 0; tileX < width / size; tileX++) {
+      const bytes = Buffer.alloc(size * size * 4);
+      for (let y = 0; y < size; y++) {
+        const from = ((tileY * size + y) * width + tileX * size) * 4;
+        pixels.copy(bytes, y * size * 4, from, from + size * 4);
+      }
+      tiles.add(bytes.toString('base64'));
+    }
+  }
+  return tiles.size;
 }
 
 for (const generation of GENERATION_IDS) {
   const layout = ROAD_SURFACES[generation];
   if (!layout) continue;
 
-  const png = render(layout);
+  const { png, pixels } = render(layout);
+
+  if (layout.tileGrid) {
+    const { size, maxUniqueTiles } = layout.tileGrid;
+    const unique = countUniqueTiles(pixels, layout.textureWidth, layout.textureHeight, size);
+    if (unique > maxUniqueTiles) {
+      throw new Error(
+        `${generation}: ユニークな ${size}×${size} タイルが ${unique} 種（上限 ${maxUniqueTiles}）。` +
+          '実機の BG 面には焼けない情報量なので、模様の境目をタイル境界へ寄せるか密度を落とす',
+      );
+    }
+    console.log(`${generation}: ユニークタイル ${unique} / ${maxUniqueTiles} 種（${size}×${size}）`);
+  }
   const relativePath = `public/${layout.texture}`;
   const absolute = join(repoRoot, relativePath);
   mkdirSync(dirname(absolute), { recursive: true });

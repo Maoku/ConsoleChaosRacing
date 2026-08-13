@@ -6,6 +6,7 @@ import {
   type RenderTextureAsset,
 } from '@console-chaos/engine';
 
+import { BACKDROPS } from '../game/view/shared/backdrop.js';
 import { CAR_MODELS, carTextureFor } from '../game/view/shared/car-model.js';
 import {
   CAR_SPRITE_GEOMETRY,
@@ -68,6 +69,12 @@ const roadTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) =
   return layout ? [{ url: layout.texture, wrap: 'clamp' as const }] : [];
 });
 
+/** 遠景の層。第2世代だけ `tools/build-backdrop.mjs` の生成物を読む（8-2） */
+const backdropTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
+  const layout = BACKDROPS[generation];
+  return layout ? [{ url: layout.texture, wrap: 'repeat' as const }] : [];
+});
+
 /** タコメーターのアトラス（生成物 / tools/build-gauge.mjs）。FC / SFC は持たない */
 const tachometerAtlases = GENERATION_IDS.flatMap((generation) => {
   const layout = TACHOMETERS[generation];
@@ -110,8 +117,8 @@ export const MANIFEST: RenderAssetManifest = {
   textures: [
     { url: 'assets/common/fallback.png', wrap: 'clamp' },
     ...roadTextures,
-    { url: 'assets/gen1/backgrounds/coast.png', wrap: 'repeat' },
-    { url: 'assets/gen2/backgrounds/coast.png', wrap: 'repeat' },
+    // 遠景の層。第2世代は BG スペックへ寄せた生成物のほうを読む（8-2）
+    ...backdropTextures,
     // **メッシュが参照するテクスチャは必ず `flipY: false`。**
     // glTF の UV は v = 0 が画像の上端だが、レンダラーは `textures` を既定 `flipY: true` で
     // 取り込む（アトラスだけは false を強制する）。指定を忘れると上下逆に貼られ、

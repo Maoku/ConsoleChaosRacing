@@ -1,4 +1,11 @@
-import type { BackgroundCommand, GenerationId, HardwareGenerationProfile } from '@console-chaos/engine';
+import {
+  defineGenerationVariant,
+  generationValue,
+  type BackgroundCommand,
+  type GenerationId,
+  type GenerationVariant,
+  type HardwareGenerationProfile,
+} from '@console-chaos/engine';
 
 import type { RoadView } from './projection.js';
 
@@ -30,6 +37,59 @@ import type { RoadView } from './projection.js';
  * `repeat` は画像 1 画素が画面 1 画素になる値を採る（第1世代なら 512 px の絵で 0.5）。
  * 拡大縮小が入らないぶん、量子化後の色が濁らない。
  */
+
+/**
+ * 遠景の層（実装計画 8-2）。**ビューと `tools/build-backdrop.mjs` が共有する。**
+ *
+ * 遠景も実機では BG 面に描かれ、8×8 タイル・**タイルあたり 16 色**のパレット割りに
+ * 従っていた（§1.4 の `paletteBlockSize: 8` が意味を持つのはこの形のときだけ）。
+ * 同梱の `coast.png` はタイルあたり最大 32 色・RGB555 の格子からも外れているので、
+ * 第2世代では規約へ寄せた版を焼き、そちらを読む。
+ *
+ * 第1世代の遠景は同梱のまま使う。FC の BG は 2bpp ＝ **タイルあたり 4 色**で、
+ * そこまで落とすと絵が成立しない。同時 25 色の契約（レンダラーが 54 色へ最近傍で
+ * 丸める）は守れているので、タイル内の色数は `Docs/QUALITY_REVIEW.md` に
+ * 実測値を記録するに留める。
+ */
+export interface BackdropTileGrid {
+  readonly size: number;
+  readonly maxColorsPerTile: number;
+}
+
+export interface BackdropLayout {
+  /** 変換の入力（同梱アセット）。変換しない世代では `texture` と同じ */
+  readonly source: string;
+  /** 実行時に読む URL */
+  readonly texture: string;
+  readonly width: number;
+  readonly height: number;
+  /** BG 面としての制約。`null` なら同梱をそのまま使う */
+  readonly tileGrid: BackdropTileGrid | null;
+}
+
+export const BACKDROPS: GenerationVariant<BackdropLayout | null> = defineGenerationVariant({
+  FC: {
+    source: 'assets/gen1/backgrounds/coast.png',
+    texture: 'assets/gen1/backgrounds/coast.png',
+    width: 512,
+    height: 192,
+    tileGrid: null,
+  },
+  SFC: {
+    source: 'assets/gen2/backgrounds/coast.png',
+    texture: 'assets/gen2/backgrounds/coast_bg.png',
+    width: 512,
+    height: 192,
+    tileGrid: { size: 8, maxColorsPerTile: 16 },
+  },
+  // 3D の 2 世代は層ではなくフォグと環境マップの帯を使う（§3.4）
+  PS1: null,
+  PS2: null,
+});
+
+export function backdropFor(generation: GenerationId): BackdropLayout | null {
+  return generationValue(BACKDROPS, generation);
+}
 
 export interface BackdropOptions {
   readonly generation: GenerationId;

@@ -72,6 +72,23 @@ export interface RoadSurfaceColors {
   readonly grass: readonly GrassBand[];
 }
 
+/**
+ * 実機の BG 面としての制約（実装計画 8-2）。
+ *
+ * SFC の Mode 7 面は 128×128 タイル ＝ 1024×1024 px だが、**タイルの実体は 256 種**
+ * しか置けない（8bpp・面あたり 256 タイル）。全画素ユニークなテクスチャは実機には
+ * 焼けない情報量を持っており、それが遠方のちらつきとして出る。
+ *
+ * `tools/build-road-texture.mjs` が焼いた絵のユニークタイルを数え、
+ * 超えたら**生成を失敗させる** — 実機に無い絵をリポジトリへ入れないための門。
+ */
+export interface RoadTileGrid {
+  /** タイルの一辺 [px] */
+  readonly size: number;
+  /** 置けるユニークタイルの上限 */
+  readonly maxUniqueTiles: number;
+}
+
 /** 路面テクスチャのレイアウト。単位はメートル（テクスチャ画素ではない） */
 export interface RoadSurfaceLayout {
   readonly texture: string;
@@ -99,6 +116,8 @@ export interface RoadSurfaceLayout {
   readonly dashGapMeters: number;
   /** 縁石の縞 1 本の長さ [m] */
   readonly kerbStripeMeters: number;
+  /** BG 面としてのタイル制約。持たない世代（ラスター面の第1世代）は `null` */
+  readonly tileGrid: RoadTileGrid | null;
   readonly colors: RoadSurfaceColors;
 }
 
@@ -119,6 +138,9 @@ const FC_ROAD: RoadSurfaceLayout = {
   dashMeters: 8,
   dashGapMeters: 16,
   kerbStripeMeters: 12,
+  // ラスター面はタイル面ではない（走査線ごとに U を引き直す専用パス）ので、
+  // 8×8 タイル 256 種の制約は掛からない
+  tileGrid: null,
   colors: {
     asphalt: '#545454',
     asphaltWorn: '#545454',
@@ -143,22 +165,40 @@ const FC_ROAD: RoadSurfaceLayout = {
  * V の模様（破線・縁石の縞）は 24 m 周期で、テクスチャ 1 枚にちょうど 4 周期入る。
  * この「4 周期ぶんの余白」が、走査線を傾けたとき V が端からはみ出さないための
  * 遊びになる（`affine-surface.ts` の `patternPeriodMeters` を参照）。
+ *
+ * ## 解像度を SFC の BG スペックへ落とす（実装計画 8-2）
+ *
+ * 初版は 1024×512（10.7 × 5.3 texel/m）の**全画素ユニーク**で、実機の Mode 7 面には
+ * 焼けない情報量を持っていた。最遠 220 m の行は画面 1 px が 0.73 m にあたるので、
+ * そのテクスチャを 14 倍に縮小して nearest で引くことになり、遠方がちらつく。
+ *
+ * そこで **512×256（5.3 × 2.7 texel/m）** に落とし、模様の寸法をテクセル格子へ
+ * 載せ直した。`spanMeters` / `periodMeters` は 96 m のまま — 投影も、V を 1 周期
+ * ずらせる性質（§3.3）も触らず、**密度だけ**を落とす。近景はそのぶん粗くブロックに
+ * 見えるが、**それが Mode 7 の見え方そのもの**である。
+ *
+ * V 方向の模様の境目（破線・縁石の縞）は 8×8 タイルの境界へ載せてある
+ * （2.667 texel/m なので 3 m ＝ 8 texel の倍数）。ユニークタイル数を 256 以内に
+ * 収めるための条件で、`tileGrid` を持つかぎり生成ツールが数えて門を掛ける。
  */
 const SFC_ROAD: RoadSurfaceLayout = {
   texture: 'assets/gen2/road/road_affine.png',
-  textureWidth: 1024,
-  textureHeight: 512,
+  textureWidth: 512,
+  textureHeight: 256,
   spanMeters: 96,
   periodMeters: 96,
-  roadHalfWidth: 6,
-  kerbWidth: 0.9,
-  runoffWidth: 2.4,
-  wearWidth: 0.55,
-  lineWidth: 0.36,
-  edgeLineOffset: 5.6,
-  dashMeters: 8,
-  dashGapMeters: 16,
+  roadHalfWidth: 6, // 32 texel ＝ 4 タイル
+  kerbWidth: 0.9375, // 5 texel
+  runoffWidth: 2.25, // 12 texel
+  wearWidth: 0.5625, // 3 texel
+  lineWidth: 0.375, // 2 texel
+  edgeLineOffset: 5.625, // 30 texel
+  // V は 2.667 texel/m。破線は 24 texel（3 タイル）＋ 40 texel（5 タイル）で 24 m 周期、
+  // 縁石の縞は 32 texel（4 タイル）。どちらもタイル境界で切り替わる
+  dashMeters: 9,
+  dashGapMeters: 15,
   kerbStripeMeters: 12,
+  tileGrid: { size: 8, maxUniqueTiles: 256 },
   colors: {
     asphalt: '#505860',
     asphaltWorn: '#606870',
@@ -166,9 +206,10 @@ const SFC_ROAD: RoadSurfaceLayout = {
     kerbRed: '#c02828',
     kerbPale: '#f0f0f0',
     runoff: '#a08058',
+    // 帯の幅もテクセル格子へ載せる（5.25 m ＝ 28 texel・10.5 m ＝ 56 texel）
     grass: [
-      { width: 5, color: '#388830' },
-      { width: 10, color: '#287028' },
+      { width: 5.25, color: '#388830' },
+      { width: 10.5, color: '#287028' },
       { width: Number.POSITIVE_INFINITY, color: '#185820' },
     ],
   },
