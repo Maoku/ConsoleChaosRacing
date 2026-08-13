@@ -9,6 +9,10 @@ export const ACTIONS = defineActions({
   genPrev: 'button',
   genNext: 'button',
   pause: 'button',
+  /** 決定。タイトルから走り出す・リザルトからリトライ・ポーズを解く */
+  confirm: 'button',
+  /** 戻る。どの画面からでもタイトルへ */
+  back: 'button',
 });
 
 export type RacingActions = typeof ACTIONS;
@@ -30,6 +34,9 @@ const BINDINGS: ActionBindings<RacingActions> = {
   genPrev: { keys: ['KeyQ'], gamepadButtons: [4] },
   genNext: { keys: ['KeyE'], gamepadButtons: [5] },
   pause: { keys: ['Escape'], gamepadButtons: [9] },
+  // 決定はアクセルと同じキーで受ける。走り出すのと走らせ続けるのが同じ操作になる
+  confirm: { keys: ['Enter', 'Space', 'KeyZ'], gamepadButtons: [0] },
+  back: { keys: ['Backspace'], gamepadButtons: [1] },
 };
 
 export function createRacingActionMap() {

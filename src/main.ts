@@ -36,6 +36,10 @@ try {
     'KeyX',
     'KeyQ',
     'KeyE',
+    'Enter',
+    'Escape',
+    // 戻る。既定動作（履歴を戻る）に食われるとタイトルへ帰れない
+    'Backspace',
   ]);
   const onKeyDown = (event: KeyboardEvent) => {
     if (swallowed.has(event.code)) event.preventDefault();

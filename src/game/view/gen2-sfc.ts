@@ -153,7 +153,7 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
 
   // 32 スプライト/走査線なので実質かからないが、契約は同じように守る。
   // 枠と HUD は BG 相当なので制限の外（§3.6）
-  const hud = buildHud({ generation, profile, display });
+  const hud = buildHud({ generation, profile, display, screen: context.screen });
   pushSpritePlane(frame, {
     profile,
     entries,

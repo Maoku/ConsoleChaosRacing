@@ -136,7 +136,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   // 走査線制限・重ね順・BG 相当の扱いは `sprite-plane.ts` に集約してある。
   // ミニマップの枠と HUD の文字は BG 相当なので制限の外。枠は最背面、
   // HUD は最前面（実機の BG 面も優先度ビットでスプライトの前後どちらにも置けた）
-  const hud = buildHud({ generation, profile, display });
+  const hud = buildHud({ generation, profile, display, screen: context.screen });
   const culled = pushSpritePlane(frame, {
     profile,
     entries,

@@ -143,7 +143,7 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
 
   // HUD は最後 ＝ 最前面。スクリーン空間スプライトは固定スロット 10 へ入り、
   // 同じスロットの中では積んだ順が保たれる
-  pushHud(frame, { generation, profile, display });
+  pushHud(frame, { generation, profile, display, screen: context.screen });
 }
 
 function distanceTo(

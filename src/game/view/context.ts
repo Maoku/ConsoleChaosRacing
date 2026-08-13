@@ -4,6 +4,7 @@ import type {
   RenderFrame,
 } from '@console-chaos/engine';
 
+import type { ScreenId } from '../flow/screens.js';
 import type { RaceState } from '../sim/state.js';
 import type { DisplaySnapshot } from './shared/display-state.js';
 
@@ -28,6 +29,16 @@ export interface ViewContext {
    * （走査線ごとにドローコールを出す第2世代）が帯の粒度を落とすのに使う。
    */
   readonly renderedGenerations: number;
+  /**
+   * いま出ている画面（実装計画 §5.2）。
+   *
+   * **世代 ID の分岐ではない。** タイトル・カウントダウン・リザルトは 4 世代とも
+   * 同じ組み立てで描かれ、世代差は variant テーブルが持つ。
+   */
+  readonly screen: ScreenId;
+  /** その画面に入ってからの tick。点滅や演出の時計 */
+  readonly screenTicks: number;
+  readonly paused: boolean;
 }
 
 export type ViewBuilder = (frame: RenderFrame, context: ViewContext) => void;

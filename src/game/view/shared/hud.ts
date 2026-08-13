@@ -9,6 +9,7 @@ import {
   type SpriteCommand,
 } from '@console-chaos/engine';
 
+import { showsRaceHud, type ScreenId } from '../../flow/screens.js';
 import { formatLapTime } from '../../sim/race.js';
 import { ENTRANT_COUNT, LAP_COUNT } from '../../sim/state.js';
 import type { DisplayCar, DisplaySnapshot } from './display-state.js';
@@ -154,6 +155,12 @@ export interface HudOptions {
    * 第1世代で車が 6Hz なのに数字がぬるぬる動く、という食い違いが出る
    */
   readonly display: DisplaySnapshot;
+  /**
+   * いま出ている画面。走行中の画面でなければ HUD は 1 つも積まない
+   * （タイトルとリザルトはそれぞれの画面が自分の文字を出す）。
+   * 省略時は常に出す — HUD 単体を検査するテストのため
+   */
+  readonly screen?: ScreenId;
   readonly layer?: number;
 }
 
@@ -217,6 +224,7 @@ export function hudLines(
 export function buildHud(options: HudOptions): HudView {
   const { generation, profile, display } = options;
   const style = generationValue(HUD_STYLES, generation);
+  if (options.screen && !showsRaceHud(options.screen)) return { style, blocks: [], sprites: [] };
   const safe = safeAreaOf(profile);
   const scale = style.scale;
   const advance = fontAdvance(profile.video.tileSnap);

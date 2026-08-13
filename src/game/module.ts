@@ -9,9 +9,8 @@ import {
 import { createEngineVoiceScheduler } from './audio/engine-sound.js';
 import { arrangementFor } from './audio/score.js';
 import { createRaceSfx } from './audio/sfx.js';
+import { acceptsDriving, createFlow, stepFlow } from './flow/screens.js';
 import { createRacingActionMap } from './input/bindings.js';
-import { stepRace } from './sim/race.js';
-import { createRaceState } from './sim/state.js';
 import { VEHICLE, type VehicleControl } from './sim/vehicle.js';
 import { buildGenerationView } from './view/index.js';
 import { createDisplayLatch } from './view/shared/display-state.js';
@@ -20,16 +19,15 @@ import { PLAYER_ENTRANT, profileOf } from './view/shared/variants.js';
 /**
  * ゲームモジュール（実装計画 §2.4）。
  *
- * ここがやるのは 3 つだけ — 入力を取り、シムを 1 ティック進め、
+ * ここがやるのは 3 つだけ — 入力を取り、状態機械を 1 ティック進め、
  * 描画する世代のぶんだけビューを呼ぶ。世代ごとの表現は `view/index.ts` の
- * 割り当てテーブルの向こう側にある。
+ * 割り当てテーブルの向こう側にあり、画面ごとの進行は `flow/screens.ts` にある。
  */
 export const racingModule: GameModule = {
   id: 'console-chaos-racing',
   async create(context: GameContext): Promise<GameInstance> {
     const actions = createRacingActionMap();
-    // タイトル画面が入るまでは、起動直後から AI 8 台のレースを回す
-    const race = createRaceState({ autoPilot: true });
+    const flow = createFlow();
     const display = createDisplayLatch();
     let seconds = 0;
 
@@ -52,31 +50,36 @@ export const racingModule: GameModule = {
           context.generation.profile,
           FIXED_DT_SECONDS * 1000,
         );
+        // 世代切替はどの画面でも効く。状態機械は世代を知らない（§6.1 世代横断 4）
         if (input.genNext.pressed) context.generation.cycle(1);
         if (input.genPrev.pressed) context.generation.cycle(-1);
 
-        // 自機の操作。何か踏まれた時点でアトラクトデモを抜ける
         const control: VehicleControl = {
           steer: input.steer,
           throttle: input.throttle.value,
           brake: input.brake.value,
         };
-        if (race.autoPilot && (input.throttle.pressed || input.brake.pressed)) {
-          race.autoPilot = false;
-        }
-
-        stepRace(race, control);
+        const transition = stepFlow(flow, {
+          control,
+          confirm: input.confirm.pressed,
+          back: input.back.pressed,
+          pause: input.pause.pressed,
+        });
+        // レースを作り直したら、立ち上がりで鳴らす音の記憶も畳む
+        if (transition?.raceRestarted) sfx.reset();
 
         // 音はシムの後。エンジン音は自機の状態から、効果音は立ち上がりから決まる。
-        // どちらも `AudioContext` の時計で先読みするので、描画が落ちても乱れない
-        const player = race.cars[PLAYER_ENTRANT]!;
+        // どちらも `AudioContext` の時計で先読みするので、描画が落ちても乱れない。
+        // ポーズ中とリザルト中はスロットルを 0 として扱い、エンジン音を落ち着かせる
+        const player = flow.race.cars[PLAYER_ENTRANT]!;
+        const driving = acceptsDriving(flow.screen) && !flow.paused;
         engineSound.update(context.audio, context.generation.profile, {
           speed: player.speed,
           maxSpeed: VEHICLE.MAX_SPEED,
-          throttle: player.throttleInput,
+          throttle: driving ? player.throttleInput : 0,
           offTrack: player.offTrack,
         });
-        sfx.update(context.audio, context.generation.profile, race);
+        sfx.update(context.audio, context.generation.profile, flow.race);
       },
 
       buildRenderFrame(frame: RenderFrame) {
@@ -90,10 +93,13 @@ export const racingModule: GameModule = {
           buildGenerationView(frame, {
             generation,
             profile,
-            state: race,
-            display: display.sample(generation, profile, race),
+            state: flow.race,
+            display: display.sample(generation, profile, flow.race),
             seconds,
             renderedGenerations: generations.length,
+            screen: flow.screen,
+            screenTicks: flow.screenTicks,
+            paused: flow.paused,
           });
         }
       },

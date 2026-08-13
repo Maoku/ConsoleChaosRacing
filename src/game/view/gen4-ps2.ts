@@ -240,7 +240,7 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
 
   // HUD は最後 ＝ 最前面。深度バッファがあってもスクリーン空間スプライトは
   // シーンの末尾へ合成されるので、積んだ順がそのまま重ね順になる
-  pushHud(frame, { generation, profile, display });
+  pushHud(frame, { generation, profile, display, screen: context.screen });
 }
 
 /** カメラの向き。方位はワールドの `atan2(z, x)`、ピッチは見下ろしが負 */
