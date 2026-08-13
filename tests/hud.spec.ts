@@ -8,10 +8,27 @@ import {
 } from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
 
+import { gearFor, rpmFor } from '../src/game/audio/engine-sound.js';
 import { stepRace } from '../src/game/sim/race.js';
+import { VEHICLE } from '../src/game/sim/vehicle.js';
 import { createDisplayLatch } from '../src/game/view/shared/display-state.js';
 import { FONT_ATLAS, fontAdvance, measureText } from '../src/game/view/shared/font.js';
-import { GENERATION_LABELS, buildHud, hudLines, pushHud } from '../src/game/view/shared/hud.js';
+import {
+  GENERATION_LABELS,
+  TEXT_STYLES,
+  buildHud,
+  hudLines,
+  pushHud,
+} from '../src/game/view/shared/hud.js';
+import { defaultMinimapRect } from '../src/game/view/shared/minimap.js';
+import {
+  TACHO_ATLAS,
+  TACHO_SWEEP,
+  buildTachometer,
+  needleAngle,
+  tachometerAdvance,
+  tachometerLayoutFor,
+} from '../src/game/view/shared/tachometer.js';
 import { safeAreaOf } from '../src/game/view/shared/variants.js';
 import { buildFrame, raceAfter } from './support/frame.js';
 
@@ -143,10 +160,17 @@ describe('HUD', () => {
         const { profile, display } = snapshotAt(generation, 1500);
         const sprites = buildHud({ generation, profile, display }).sprites;
         expect(sprites.length).toBeGreaterThan(0);
+        const tachoUrl = tachometerLayoutFor(generation)?.url;
         for (const sprite of sprites) {
           expect(sprite.screenSpace).toBe(true);
-          expect(sprite.texture).toBe(FONT_ATLAS.url);
           expect(sprite.cell).toBeGreaterThanOrEqual(0);
+          // 盤・針・中央の丸だけが専用のアトラス（8-3）。
+          // 文字もパネルも、盤の中のギア段さえもフォント 1 枚で足りる
+          if (sprite.texture === tachoUrl) {
+            expect(sprite.cell).toBeLessThan(TACHO_ATLAS.columns * TACHO_ATLAS.rows);
+            continue;
+          }
+          expect(sprite.texture).toBe(FONT_ATLAS.url);
           expect(sprite.cell).toBeLessThan(FONT_ATLAS.columns * FONT_ATLAS.rows);
         }
       });
@@ -203,6 +227,102 @@ describe('HUD', () => {
     expect(panel!.hardwareBlend).toMatchObject({ family: 'gen4-gs', opacity: 0.62 });
   });
 
+  /**
+   * タコメーター（実装計画 8-3）。第3・第4世代だけに出る。
+   *
+   * 針の角度がエンジン音と同じ `rpmFor()` から出ていることが要点で、
+   * シフトのたびに針が落ちる動きと音が同じ 1 つの式から出る。
+   */
+  describe('タコメーター', () => {
+    for (const generation of ['PS1', 'PS2'] as const) {
+      it(`${generation}: 盤・針・ギア段が安全領域の内側でミニマップと重ならない`, () => {
+        const { profile, display } = snapshotAt(generation, 1500);
+        const view = buildHud({ generation, profile, display });
+        const tacho = view.tachometer!;
+        expect(tacho).not.toBeNull();
+
+        const safe = safeAreaOf(profile);
+        expect(tacho.rect.left).toBeGreaterThanOrEqual(safe.left);
+        expect(tacho.rect.top).toBeGreaterThanOrEqual(safe.top);
+        expect(tacho.rect.left + tacho.rect.size).toBeLessThanOrEqual(safe.left + safe.width);
+        expect(tacho.rect.top + tacho.rect.size).toBeLessThanOrEqual(safe.top + safe.height);
+
+        const minimap = defaultMinimapRect(generation, profile);
+        expect(tacho.rect.left + tacho.rect.size).toBeLessThanOrEqual(minimap.left);
+
+        // 速度の数字は盤の右隣へ寄る（8-8 で左下が 1 行になったぶんに収まる）
+        const speed = view.blocks.find((block) => block.id === 'speed')!;
+        expect(speed.left).toBeGreaterThanOrEqual(tacho.rect.left + tacho.rect.size);
+        expect(speed.left + speed.width).toBeLessThanOrEqual(minimap.left);
+      });
+
+      it(`${generation}: 針の角度が回転数と単調に対応する`, () => {
+        const { profile, display } = snapshotAt(generation, 1500);
+        const style = generationValue(TEXT_STYLES, generation);
+        const base = display.cars[0]!;
+        let previous = -Infinity;
+        for (const speed of [0, 5, 10, 15, 20, 25]) {
+          const view = buildTachometer({
+            generation,
+            profile,
+            car: { ...base, speed },
+            style,
+          })!;
+          expect(view.angle).toBeCloseTo(needleAngle(view.rpm), 10);
+          expect(view.rpm).toBeCloseTo(rpmFor(speed / VEHICLE.MAX_SPEED), 10);
+          expect(view.gear).toBe(gearFor(speed / VEHICLE.MAX_SPEED) + 1);
+          if (view.rpm > previous) expect(view.angle).toBeGreaterThan(needleAngle(previous));
+          previous = view.rpm;
+        }
+        // 振れ幅の両端を外さない
+        expect(needleAngle(0)).toBe(TACHO_SWEEP.start);
+        expect(needleAngle(1)).toBe(TACHO_SWEEP.end);
+      });
+
+      it(`${generation}: 針が表示の更新レートで止まる`, () => {
+        // 速度は `DisplayLatch` を通した値なので、針も 30Hz / 60Hz で止まる
+        const profile = HARDWARE_GENERATION_PROFILES[generation];
+        const latch = createDisplayLatch();
+        const state = raceAfter(1500);
+        const angles = new Set<number>();
+        const steps = generation === 'PS1' ? 2 : 1;
+        for (let step = 0; step < steps; step++) {
+          const display = latch.sample(generation, profile, state);
+          angles.add(buildHud({ generation, profile, display }).tachometer!.angle);
+          stepRace(state);
+        }
+        expect(angles.size).toBe(1);
+      });
+    }
+
+    it('FC / SFC には 1 コマンドも積まれない', () => {
+      // アナログのメーターは 3D 世代の HUD の作法であり、
+      // FC / SFC では `translucency` と同時色数の制約にも触れる
+      for (const generation of ['FC', 'SFC'] as const) {
+        const { profile, display } = snapshotAt(generation, 1500);
+        const view = buildHud({ generation, profile, display });
+        expect(view.tachometer, generation).toBeNull();
+        expect(view.sprites.filter((sprite) => sprite.id.startsWith('tacho-'))).toEqual([]);
+        // 左下の塊が寄らないことも確かめる（寄せ量が 0）
+        expect(tachometerAdvance(generation)).toBe(0);
+      }
+    });
+
+    it('盤の半透明は TEXT_STYLES と揃い、針は不透明のまま', () => {
+      for (const generation of ['PS1', 'PS2'] as const) {
+        const { profile, display } = snapshotAt(generation, 1500);
+        const sprites = buildHud({ generation, profile, display }).sprites;
+        const dial = sprites.find((sprite) => sprite.id === `tacho-${generation}-dial`)!;
+        const needle = sprites.find((sprite) => sprite.id === `tacho-${generation}-needle`)!;
+        expect(dial.hardwareBlend).toEqual(generationValue(TEXT_STYLES, generation).panel!.blend);
+        expect(generationSupportsHardwareBlend(generation, dial.hardwareBlend!)).toBe(true);
+        expect(needle.hardwareBlend).toBeUndefined();
+        // 針は後（＝手前）に積まれる
+        expect(sprites.indexOf(needle)).toBeGreaterThan(sprites.indexOf(dial));
+      }
+    });
+  });
+
   it('ラップタイムが表示の更新レートで止まる（第1世代の時計は 6Hz）', () => {
     // `RaceState.tick` を直接読むと、車が 6Hz なのに時計だけ 60Hz で回ってしまう
     const profile = HARDWARE_GENERATION_PROFILES.FC;
@@ -233,7 +353,10 @@ describe('HUD', () => {
     expect(frame.sprites.map((sprite) => sprite.id)).toEqual(
       view.sprites.map((sprite) => sprite.id),
     );
-    // パネルが文字より先 ＝ 奥に積まれている
-    expect(frame.sprites[0]!.id).toMatch(/^hud-panel-/);
+    // タコメーターが先頭（8-3）。その後はパネルが文字より先 ＝ 奥に積まれている
+    expect(frame.sprites[0]!.id).toBe('tacho-PS1-dial');
+    expect(frame.sprites.find((sprite) => sprite.id.startsWith('hud-'))!.id).toMatch(
+      /^hud-panel-/,
+    );
   });
 });

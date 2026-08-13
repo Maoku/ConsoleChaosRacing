@@ -20,7 +20,8 @@
     "build:skyline": "tsx tools/build-skyline.mjs",
     "build:font": "tsx tools/build-font-atlas.mjs",
     "build:logo": "tsx tools/build-title-logo.mjs",
-    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:sprites && npm run build:skyline && npm run build:font && npm run build:logo"
+    "build:gauge": "tsx tools/build-gauge.mjs",
+    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:sprites && npm run build:skyline && npm run build:font && npm run build:logo && npm run build:gauge"
   },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"

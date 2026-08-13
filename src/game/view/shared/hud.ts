@@ -16,6 +16,11 @@ import type { DisplayCar, DisplaySnapshot } from './display-state.js';
 import { FONT_ATLAS, fontAdvance, measureText } from './font.js';
 import { ceilToTile, floorToTile } from './quantize.js';
 import { panelSprite, textSprites, type TextShadow } from './text.js';
+import {
+  buildTachometer,
+  tachometerAdvance,
+  type TachometerView,
+} from './tachometer.js';
 import { PLAYER_ENTRANT, safeAreaOf } from './variants.js';
 
 /**
@@ -154,6 +159,11 @@ export interface HudBlock {
 export interface HudView {
   readonly style: TextStyle;
   readonly blocks: readonly HudBlock[];
+  /**
+   * タコメーター（8-3）。第1・第2世代は `null` で、コマンドも 1 つも生まれない。
+   * 盤・針・ギア段は `sprites` にも含まれる
+   */
+  readonly tachometer: TachometerView | null;
   /** パネル → 影 → 文字 の順に並んだスプライト。積む順がそのまま重ね順 */
   readonly sprites: readonly SpriteCommand[];
 }
@@ -238,7 +248,9 @@ export function hudLines(
 export function buildHud(options: HudOptions): HudView {
   const { generation, profile, display } = options;
   const style = generationValue(TEXT_STYLES, generation);
-  if (options.screen && !showsRaceHud(options.screen)) return { style, blocks: [], sprites: [] };
+  if (options.screen && !showsRaceHud(options.screen)) {
+    return { style, blocks: [], tachometer: null, sprites: [] };
+  }
   const safe = safeAreaOf(profile);
   const scale = style.scale;
   const advance = fontAdvance(profile.video.tileSnap);
@@ -252,6 +264,13 @@ export function buildHud(options: HudOptions): HudView {
     height: (lines.length - 1) * pitch + glyphHeight,
   });
 
+  // タコメーター（8-3）は左下。速度の数字はその右隣へ寄る。
+  // FC / SFC では `null` が返り、寄せ量も 0 になるので配置は前のままになる
+  const player = display.cars[PLAYER_ENTRANT];
+  const tachometer = player
+    ? buildTachometer({ generation, profile, car: player, style })
+    : null;
+
   const blocks: HudBlock[] = [];
   for (const { id, lines } of content) {
     const { width, height } = measure(lines);
@@ -259,20 +278,28 @@ export function buildHud(options: HudOptions): HudView {
     const left =
       id === 'laptime'
         ? floorToTile(safe.left + safe.width - width, profile)
-        : ceilToTile(safe.left, profile);
+        : ceilToTile(safe.left + (id === 'speed' ? tachometerAdvance(generation) : 0), profile);
     const top =
       id === 'speed'
-        ? floorToTile(safe.top + safe.height - height, profile)
+        ? // 盤があるときは盤の縦中央へ合わせる。無ければ従来どおり安全領域の底へ
+          floorToTile(
+            tachometer
+              ? tachometer.rect.top + (tachometer.rect.size - height) / 2
+              : safe.top + safe.height - height,
+            profile,
+          )
         : ceilToTile(safe.top, profile);
     blocks.push({ id, lines, left, top, width, height });
   }
 
   const sprites: SpriteCommand[] = [];
+  // 盤を先に積む（後に積んだものが手前）。文字が盤へ隠れることは無い
+  if (tachometer) for (const sprite of tachometer.sprites) sprites.push(sprite);
   for (const block of blocks) {
     for (const sprite of blockSprites(block, options, style, pitch)) sprites.push(sprite);
   }
 
-  return { style, blocks, sprites };
+  return { style, blocks, tachometer, sprites };
 }
 
 function blockSprites(

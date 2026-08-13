@@ -15,6 +15,7 @@ import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
+import { TACHO_ATLAS, TACHOMETERS } from '../game/view/shared/tachometer.js';
 import {
   TRACK_MESH_LODS,
   trackSectorAsset,
@@ -60,6 +61,14 @@ const trackModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
 const roadTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
   const layout = ROAD_SURFACES[generation];
   return layout ? [{ url: layout.texture, wrap: 'clamp' as const }] : [];
+});
+
+/** タコメーターのアトラス（生成物 / tools/build-gauge.mjs）。FC / SFC は持たない */
+const tachometerAtlases = GENERATION_IDS.flatMap((generation) => {
+  const layout = TACHOMETERS[generation];
+  return layout
+    ? [{ url: layout.url, columns: TACHO_ATLAS.columns, rows: TACHO_ATLAS.rows }]
+    : [];
 });
 
 const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
@@ -119,6 +128,9 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen2/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen3/hud/minimap.png', columns: 1, rows: 1 },
     { url: 'assets/gen4/hud/minimap.png', columns: 1, rows: 1 },
+    // 生成物（tools/build-gauge.mjs・フェーズ 8-3）。第3・第4世代だけが持つ。
+    // アナログのメーターは 3D 世代の HUD の作法で、出ないこと自体が世代差になる
+    ...tachometerAtlases,
   ],
   models: [
     { url: 'assets/gen3/models/car.glb', polygonSort: true },
