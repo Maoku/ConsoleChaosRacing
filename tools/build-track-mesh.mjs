@@ -48,6 +48,14 @@ const GRASS_DROP = 0.45;
  * 三角形は 1 セクターあたり第3世代 +388・第4世代 +248 で、どちらも予算の内側。
  */
 const WALL_HEIGHT = 1;
+/**
+ * 壁の外へ張る土手の幅 [m]（実装計画 8-6）。
+ *
+ * 壁の上端の高さで平らに伸ばす（＝壁は土手を留める擁壁）。**木を植える地面**であり、
+ * これが無いと壁の外に置いた木が空の中に浮く（実画面で起きた）。
+ * 1 区間あたり四角形 2 つ（左右）＝ 4 三角形しか増えない。
+ */
+const APRON_WIDTH = 12;
 
 // ── アトラスの u 帯（`buildSurfaceTexture` と一致させる）
 const BAND = {
@@ -73,10 +81,15 @@ function crossSection(halfWidth, roadSpans) {
   const points = [];
   const push = (lateral, height, u, tile) => points.push({ lateral, height, u, tile });
   const outer = halfWidth + CURB_WIDTH + GRASS_WIDTH;
+  const apronHeight = -GRASS_DROP + WALL_HEIGHT;
+
+  // 左の土手。壁の上端の高さで平らに伸ばす。**列は左から右へ**（法線が上を向く向き）
+  push(-(outer + APRON_WIDTH), apronHeight, BAND.grassOuter, TILE.grass);
+  push(-outer, apronHeight, BAND.grassInner, TILE.grass);
 
   // 左の壁。**列は上から下へ並べる** — 面の法線は「列の向き × 進行方向」なので、
   // 上から下へ並べたときだけ法線がコース中心（右）を向く。逆にすると裏面カリングで消える
-  push(-outer, -GRASS_DROP + WALL_HEIGHT, BAND.wallTop, TILE.wall);
+  push(-outer, apronHeight, BAND.wallTop, TILE.wall);
   push(-outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
 
   push(-outer, -GRASS_DROP, BAND.grassOuter, TILE.grass);
@@ -94,19 +107,25 @@ function crossSection(halfWidth, roadSpans) {
 
   // 右の壁は逆に、下から上へ（法線がコース中心 ＝ 左を向く）
   push(outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
-  push(outer, -GRASS_DROP + WALL_HEIGHT, BAND.wallTop, TILE.wall);
+  push(outer, apronHeight, BAND.wallTop, TILE.wall);
+
+  // 右の土手
+  push(outer, apronHeight, BAND.grassInner, TILE.grass);
+  push(outer + APRON_WIDTH, apronHeight, BAND.grassOuter, TILE.grass);
 
   // 連続して面を張る範囲。境目（同じ位置で u が飛ぶ点）は跨がない
-  const road = 6;
+  const road = 8;
   const last = road + roadSpans;
   const strips = [
-    [0, 1], // 左の壁
-    [2, 3], // 左の草地
-    [4, 5], // 左の縁石
+    [0, 1], // 左の土手
+    [2, 3], // 左の壁
+    [4, 5], // 左の草地
+    [6, 7], // 左の縁石
     [road, last], // 路面
     [last + 1, last + 2], // 右の縁石
     [last + 3, last + 4], // 右の草地
     [last + 5, last + 6], // 右の壁
+    [last + 7, last + 8], // 右の土手
   ];
   return { points, strips };
 }

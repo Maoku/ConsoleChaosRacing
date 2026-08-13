@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { GENERATION_IDS, HARDWARE_GENERATION_PROFILES } from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
 
@@ -10,10 +13,12 @@ import {
 } from '../src/game/view/shared/scenery.js';
 import { tyreWallDrawDistance } from '../src/game/view/shared/scenery-mesh.js';
 import {
+  SCENERY_SPRITE_GEOMETRY,
   sceneryBillboardAtlasFor,
   scenerySpriteAtlasFor,
 } from '../src/game/view/shared/scenery-sprite.js';
 import { PLAYER_ENTRANT } from '../src/game/view/shared/variants.js';
+import { decodePng } from '../tools/lib/png.mjs';
 import { buildFrame, raceAfter } from './support/frame.js';
 
 /**
@@ -94,6 +99,53 @@ describe('背景オブジェクト', () => {
     // 第3世代にタイヤフェンスは置かない（スロットとドローコールを増やさない）
     expect(tyreWallDrawDistance('PS1')).toBeNull();
     expect(tyreWallDrawDistance('PS2')).toBeGreaterThan(0);
+  });
+
+  /**
+   * 焼いた絵の向き。**スクリーン空間とワールド空間で要求が逆**になる。
+   *
+   * スクリーン空間スプライトのクアッドは `ortho(0, W, H, 0)` を通るので画像の上端が
+   * スプライトの下端へ割り当たり、絵を上下反転して焼くのが正しい（車・フォントと同じ）。
+   * ワールド空間のビルボードにはその反転が無く、同じ絵を貼ると**木が逆さまに立つ**
+   * — 実画面で起きた。例外にならないので、ここで向きを固定する。
+   */
+  describe('焼いた絵の向き', () => {
+    /** 木のセルの中で、幹（画像の下寄りの細い塊）がどちら側にあるか */
+    function trunkAtImageTop(url: string, cellSize: number): boolean {
+      const image = decodePng(readFileSync(join(process.cwd(), 'public', url)));
+      const column = SCENERY_SPRITE_GEOMETRY.cells.tree * cellSize;
+      let top = 0;
+      let bottom = 0;
+      for (let y = 0; y < cellSize; y++) {
+        let opaque = 0;
+        for (let x = 0; x < cellSize; x++) {
+          if (image.pixels[((y * image.width + column + x) * 4) + 3]! >= 8) opaque += 1;
+        }
+        // 幹の行は不透明な画素がごく少ない（葉の塊は広い）
+        if (opaque === 0) continue;
+        if (y < cellSize / 2) top += opaque;
+        else bottom += opaque;
+      }
+      // 葉の塊のあるほうが「木の上」。幹はその反対側
+      return bottom > top;
+    }
+
+    it('擬似3D 世代は上下反転して焼いてある', () => {
+      for (const generation of ['FC', 'SFC'] as const) {
+        const atlas = scenerySpriteAtlasFor(generation)!;
+        expect(atlas.flipCells).toBe(true);
+        expect(trunkAtImageTop(atlas.url, atlas.cellSize), generation).toBe(true);
+      }
+    });
+
+    it('3D 世代のビルボードは反転せずに焼いてある', () => {
+      for (const generation of ['PS1', 'PS2'] as const) {
+        const atlas = sceneryBillboardAtlasFor(generation)!;
+        expect(atlas.flipCells).toBe(false);
+        // 葉が画像の上・幹が下。ワールド空間ではこれがそのまま立つ向きになる
+        expect(trunkAtImageTop(atlas.url, atlas.cellSize), generation).toBe(false);
+      }
+    });
   });
 
   describe('3D 世代', () => {

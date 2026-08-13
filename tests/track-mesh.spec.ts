@@ -46,21 +46,22 @@ function loadSector(lod: TrackMeshLod, sector: number): GltfPrimitive {
 
 /**
  * 断面 1 輪ぶんの頂点数。
- * 壁 2 ＋ 草地 2 ＋ 縁石 2 ＋ 路面 (spans+1) ＋ 縁石 2 ＋ 草地 2 ＋ 壁 2。
- * 壁は 8-6 で足したもので、`TransformCommand` に X/Z 回転が無い以上、
- * バンクのついた路面に沿う壁はメッシュへ焼き込むしかない。
+ * 土手 2 ＋ 壁 2 ＋ 草地 2 ＋ 縁石 2 ＋ 路面 (spans+1) ＋ 縁石 2 ＋ 草地 2 ＋ 壁 2 ＋ 土手 2。
+ * 壁と土手は 8-6 で足したもので、`TransformCommand` に X/Z 回転が無い以上、
+ * バンクのついた路面に沿う壁はメッシュへ焼き込むしかない。土手は**木を植える地面**で、
+ * 無いと壁の外に置いた木が空の中に浮く。
  */
 function ringWidth(lod: TrackMeshLod): number {
-  return 6 + (lod.roadSpans + 1) + 6;
+  return 8 + (lod.roadSpans + 1) + 8;
 }
 
-/** 1 区間あたりの四角形。壁・草地・縁石・路面 spans・縁石・草地・壁 */
+/** 1 区間あたりの四角形。土手・壁・草地・縁石・路面 spans・縁石・草地・壁・土手 */
 function quadsPerSegment(lod: TrackMeshLod): number {
-  return 6 + lod.roadSpans;
+  return 8 + lod.roadSpans;
 }
 
-/** 路面の最初の点の列番号（壁 2 ＋ 草地 2 ＋ 縁石 2 のあと） */
-const ROAD_START = 6;
+/** 路面の最初の点の列番号（土手 2 ＋ 壁 2 ＋ 草地 2 ＋ 縁石 2 のあと） */
+const ROAD_START = 8;
 
 describe('コースメッシュ', () => {
   for (const generation of MESH_GENERATIONS) {
@@ -125,8 +126,9 @@ describe('コースメッシュ', () => {
           for (let vertex = 0; vertex < normals.length / 3; vertex++) {
             const column = vertex % RING_WIDTH;
             const ny = normals[vertex * 3 + 1]!;
-            // 壁は列の両端 2 つずつ。垂直な面なので上は向かない
-            if (column < 2 || column >= RING_WIDTH - 2) {
+            // 壁は列の端から 3・4 番目。垂直な面なので上は向かない
+            const isWall = (column >= 2 && column < 4) || (column >= RING_WIDTH - 4 && column < RING_WIDTH - 2);
+            if (isWall) {
               expect(Math.abs(ny)).toBeLessThan(0.3);
               // 法線がコース中心のほうを向いていること（外を向くと壁の裏側が見える）
               const ring = Math.floor(vertex / RING_WIDTH);
@@ -167,7 +169,7 @@ describe('コースメッシュ', () => {
             maxY = Math.max(maxY, positions[index]!);
           }
         }
-        // 草地が路面より 0.45 m 下がるぶんと、壁の高さ 1.0 m（8-6）を含む
+        // 草地が路面より 0.45 m 下がるぶんと、壁 ＋ 土手の高さ 1.0 m（8-6）を含む
         expect(maxY - minY).toBeGreaterThan(7.5);
         expect(maxY - minY).toBeLessThan(10.5);
       });
@@ -210,8 +212,13 @@ describe('コースメッシュ', () => {
             if (column >= ROAD_START && column <= ROAD_START + LOD.roadSpans) {
               expect(u).toBeLessThan(0.5); // 路面の帯
             }
-            // 壁は列の両端 2 つずつ。アトラスのいちばん外の帯を引く（8-6）
-            if (column < 2 || column >= RING_WIDTH - 2) expect(u).toBeGreaterThan(0.88);
+            // 壁はアトラスのいちばん外の帯、土手は草地の帯を引く（8-6）
+            const isWall = (column >= 2 && column < 4) || (column >= RING_WIDTH - 4 && column < RING_WIDTH - 2);
+            if (isWall) expect(u).toBeGreaterThan(0.88);
+            if (column < 2 || column >= RING_WIDTH - 2) {
+              expect(u).toBeGreaterThan(0.7);
+              expect(u).toBeLessThan(0.88);
+            }
           }
         }
       });

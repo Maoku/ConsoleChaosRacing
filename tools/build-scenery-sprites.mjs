@@ -177,11 +177,18 @@ function drawTyres(palette, cell) {
   return raster;
 }
 
-/** セルのラスタをアトラスへ貼る。**セルの中だけを上下反転する** */
-function blitFlipped(atlas, source, column, cell) {
+/**
+ * セルのラスタをアトラスへ貼る。`flip` のときだけ**セルの中で上下を反転する**。
+ *
+ * スクリーン空間スプライト（擬似3D 世代）はクアッドが `ortho(0, W, H, 0)` を通り、
+ * 画像の上端がスプライトの下端へ割り当たるので反転して焼くのが正しい。
+ * ワールド空間のビルボード（3D 世代）にはその反転が無いため、同じ絵を貼ると
+ * **木が逆さまに立つ**（実画面で確認）。焼き方をここで分ける。
+ */
+function blit(atlas, source, column, cell, flip) {
   for (let y = 0; y < cell; y++) {
     for (let x = 0; x < cell; x++) {
-      const from = ((cell - 1 - y) * cell + x) * 4;
+      const from = ((flip ? cell - 1 - y : y) * cell + x) * 4;
       const to = (y * atlas.width + column * cell + x) * 4;
       for (let channel = 0; channel < 4; channel++) {
         atlas.pixels[to + channel] = source.pixels[from + channel];
@@ -200,9 +207,10 @@ for (const generation of GENERATION_IDS) {
 
   const cell = layout.cellSize;
   const atlas = new Raster(cell * columns, cell * rows);
-  blitFlipped(atlas, drawSign(palette, cell), cells.sign, cell);
-  blitFlipped(atlas, drawTree(palette, cell), cells.tree, cell);
-  blitFlipped(atlas, drawTyres(palette, cell), cells.tyres, cell);
+  const flip = layout.flipCells;
+  blit(atlas, drawSign(palette, cell), cells.sign, cell, flip);
+  blit(atlas, drawTree(palette, cell), cells.tree, cell, flip);
+  blit(atlas, drawTyres(palette, cell), cells.tyres, cell, flip);
 
   const png = encodePng(atlas.width, atlas.height, atlas.pixels);
   const relativePath = `public/${layout.url}`;
@@ -219,7 +227,9 @@ for (const generation of GENERATION_IDS) {
   }
   console.log(
     `${generation}: ${layout.url} ${atlas.width}×${atlas.height} / ` +
-      `${colors.size} 色 / 出す種類 ${layout.kinds.join('・')} / ${(png.length / 1024).toFixed(1)} KB`,
+      `${colors.size} 色 / 出す種類 ${layout.kinds.join('・')} / ` +
+      `${layout.flipCells ? '上下反転（スクリーン空間）' : 'そのまま（ビルボード）'} / ` +
+      `${(png.length / 1024).toFixed(1)} KB`,
   );
 }
 

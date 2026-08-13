@@ -55,6 +55,16 @@ export interface ScenerySpriteAtlas {
    * 間引いても気付かないので、当時の実機と同じように距離で密度を落とす。
    */
   readonly thinBeyond?: number;
+  /**
+   * セルの中で**上下を反転して焼く**か（生成ツールだけが使う）。
+   *
+   * スクリーン空間スプライトと**ワールド空間のビルボードで向きの要求が逆**になる
+   * （実画面で確認）。スクリーン空間のクアッドは `ortho(0, W, H, 0)` を通るので
+   * 画像の上端がスプライトの下端へ割り当たり、絵を反転して焼くのが正しい
+   * （車スプライト・フォントと同じ規約）。ワールド空間ではその反転が無いので、
+   * 同じ絵を使うと**木が逆さまに立つ**。焼き方をここで分ける。
+   */
+  readonly flipCells: boolean;
   readonly color: string;
 }
 
@@ -67,6 +77,8 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
       // 走査線あたり 8 スプライトしか出せないので、種類を看板 1 つに絞る
       kinds: ['sign'],
       drawDistance: 90,
+      // スクリーン空間スプライトなので反転して焼く
+      flipCells: true,
       color: '#ffffff',
     },
     SFC: {
@@ -75,6 +87,7 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
       // 32 スプライト/走査線なので木とタイヤフェンスまで置ける
       kinds: ['sign', 'tree', 'tyres'],
       drawDistance: 150,
+      flipCells: true,
       color: '#ffffff',
     },
     PS1: null,
@@ -97,6 +110,8 @@ export const SCENERY_BILLBOARDS: GenerationVariant<ScenerySpriteAtlas | null> =
       cellSize: 128,
       kinds: ['tree'],
       drawDistance: 100,
+      // ワールド空間のビルボードは反転しない（反転すると木が逆さまに立つ）
+      flipCells: false,
       color: '#ffffff',
     },
     PS2: {
@@ -107,6 +122,7 @@ export const SCENERY_BILLBOARDS: GenerationVariant<ScenerySpriteAtlas | null> =
       // 280 m ぶんを全部積むとドローコールが 240 の予算を超えた（実測 245）。
       // 120 m より遠い木を 1 つおきにする。フォグが 8 割の距離なので見た目は変わらない
       thinBeyond: 120,
+      flipCells: false,
       color: '#ffffff',
     },
   });
