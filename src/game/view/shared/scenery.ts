@@ -41,8 +41,15 @@ const SIGN_MIN_GAP = 120;
 const TREE_SPACING = 25;
 const TYRE_SPACING = 12;
 
-/** 路面の縁からどれだけ外へ置くか [m] */
-const OFFSET = { sign: 5, tree: 13, tyres: 3 } as const;
+/**
+ * 路面の縁からどれだけ外へ置くか [m]。
+ *
+ * 木だけは**壁の外**に立てる（実画面で確認）。3D 世代のコースメッシュは
+ * 路面の外へ縁石 1.2 m ＋ 草地 9 m を張り、その外縁に高さ 1 m の壁が立つので、
+ * 木を 13 m に置くと壁の内側 ＝ コースの敷地の中に生えてしまう。
+ * 看板とタイヤフェンスは壁の内側でよい（実際のサーキットでもそこにある）。
+ */
+const OFFSET = { sign: 5, tree: 20, tyres: 3 } as const;
 
 /** 高さ [m]。擬似3D 世代のスプライトの大きさもここから決まる */
 const HEIGHT = { sign: 3.2, tree: 7, tyres: 1.1 } as const;

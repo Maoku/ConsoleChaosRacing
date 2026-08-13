@@ -36,6 +36,29 @@ export interface BootResult {
 }
 
 /**
+ * CRT を切った状態（開発時のみ・`?crt=off`）。
+ *
+ * §6.1 の「画面から色を抽出して同時 25 色以内」を**測る**ために要る。
+ * 走査線・にじみ・ノイズが乗った後の画面は数千色になるので、量子化直後の色を
+ * 数えるにはポストエフェクトを外すしかない。**遊ぶときの既定は常に full** で、
+ * §1.4 の CRT プリセットをそのまま使う（上書きは計測の口だけ）。
+ */
+const FLAT_CRT = {
+  scanline: 0,
+  bleed: 0,
+  curvature: 0,
+  bloom: 0,
+  vignette: 0,
+  noise: 0,
+  mask: 0,
+} as const;
+
+function flatCrtRequested(): boolean {
+  if (!import.meta.env.DEV || typeof location === 'undefined') return false;
+  return new URLSearchParams(location.search).get('crt') === 'off';
+}
+
+/**
  * AssetManager → Renderer → AudioService → GameHost の配線（実装計画 §2.4 / フェーズ 0）。
  *
  * `AudioContext` はユーザー操作の前に音を出せないので、サービスは最初から作っておき
@@ -48,6 +71,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     assets,
     manifest: MANIFEST,
     quality: () => 'full',
+    ...(flatCrtRequested() ? { crtOverride: () => FLAT_CRT } : {}),
   });
 
   // WebGL レンダラーの resize() は `canvas.width/height` からビューポートを張り直すだけで、
