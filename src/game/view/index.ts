@@ -10,6 +10,7 @@ import { buildGen1View } from './gen1-fc.js';
 import { buildGen2View } from './gen2-sfc.js';
 import { buildGen3View } from './gen3-ps1.js';
 import { buildGen4View } from './gen4-ps2.js';
+import { pushScreenOverlay } from './overlay.js';
 
 /**
  * GenerationId → ビューの割り当て（実装計画 §2.1）。
@@ -31,6 +32,10 @@ const VIEWS: GenerationVariant<ViewBuilder> = defineGenerationVariant({
 
 export function buildGenerationView(frame: RenderFrame, context: ViewContext): void {
   generationValue(VIEWS, context.generation)(frame, context);
+  // 画面の文字（タイトル・カウントダウン・ポーズ・リザルト）は最後に積む。
+  // ビューの後なので必ず最前面になり、第1世代でも走査線制限の対象外になる
+  // — 実機で BG タイル面に描かれていたものと同じ扱い（§3.6）
+  pushScreenOverlay(frame, context);
 }
 
 export type { ViewBuilder, ViewContext } from './context.js';

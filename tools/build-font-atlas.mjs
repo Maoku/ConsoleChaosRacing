@@ -20,7 +20,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { FONT_ATLAS } from '../src/game/view/shared/font.ts';
+import { FILL_CHAR_CODE, FONT_ATLAS } from '../src/game/view/shared/font.ts';
 import { GLYPH_HEIGHT, GLYPH_WIDTH, forEachGlyphPixel } from './lib/glyphs.mjs';
 import { encodePng } from './lib/png.mjs';
 
@@ -42,21 +42,34 @@ let inkedCells = 0;
 for (let index = 0; index < columns * rows; index++) {
   const column = index % columns;
   const row = Math.floor(index / columns);
+  const charCode = firstCharCode + index;
   let inked = 0;
 
-  forEachGlyphPixel(firstCharCode + index, (glyphX, glyphY) => {
-    // **セルの中で上下を入れ替えて書く。** レンダラーはアトラスを flipY: false で
-    // 取り込み、スクリーン空間スプライトのクアッドは画像の上端をスプライトの下端へ
-    // 割り当てる。素直に置くと文字が逆さまに描かれる。反転するのはセルの中だけで、
-    // セルの並び（＝文字コードの順）はそのまま保つ（`build-car-sprites.mjs` と同じ）
-    const x = column * cell + glyphX;
-    const y = row * cell + (cell - 1 - glyphY);
-    const offset = (y * width + x) * 4;
+  const put = (x, y) => {
+    const offset = ((row * cell + y) * width + column * cell + x) * 4;
     pixels[offset] = 255;
     pixels[offset + 1] = 255;
     pixels[offset + 2] = 255;
     pixels[offset + 3] = 255;
     inked += 1;
+  };
+
+  // ── 塗りつぶしのセルだけは**セルいっぱい**を埋める。
+  // 字形と同じ 5×7 で焼くと、これを引き伸ばして出す矩形（HUD とタイトルのパネル）が
+  // 指定した寸法の 5/8 × 7/8 にしか広がらない。実画面でパネルが文字からはみ出さず、
+  // 右と下が欠けて見えた。上下反転が要らないのは、全面が同じだから
+  if (charCode === FILL_CHAR_CODE) {
+    for (let y = 0; y < cell; y++) for (let x = 0; x < cell; x++) put(x, y);
+    inkedCells += 1;
+    continue;
+  }
+
+  forEachGlyphPixel(charCode, (glyphX, glyphY) => {
+    // **セルの中で上下を入れ替えて書く。** レンダラーはアトラスを flipY: false で
+    // 取り込み、スクリーン空間スプライトのクアッドは画像の上端をスプライトの下端へ
+    // 割り当てる。素直に置くと文字が逆さまに描かれる。反転するのはセルの中だけで、
+    // セルの並び（＝文字コードの順）はそのまま保つ（`build-car-sprites.mjs` と同じ）
+    put(glyphX, cell - 1 - glyphY);
   });
 
   if (inked > 0) inkedCells += 1;

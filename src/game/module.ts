@@ -31,6 +31,13 @@ export const racingModule: GameModule = {
     const display = createDisplayLatch();
     let seconds = 0;
 
+    if (import.meta.env.DEV) {
+      // 開発時の手動検証用。カウントダウンやリザルトの画面は 3 周走らないと出ないので、
+      // コンソールから `racingFlow.screen = 'result'` のように飛べるようにしておく
+      // （フェーズ 8 のスクリーンショット採取でも使う）
+      (globalThis as unknown as { racingFlow?: unknown }).racingFlow = flow;
+    }
+
     // ── 音（実装計画 §4）。曲は 1 つで、世代が変わっても位相は保たれる。
     // 音源の差し替えは `GameHost` が `onSwitch` で自動的に行うので、
     // ゲーム側がやるのは**編曲の差し替えだけ**である

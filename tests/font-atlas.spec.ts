@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { FONT_ATLAS, LOGO_ATLAS, fontCell, measureText } from '../src/game/view/shared/font.js';
+import { FILL_CHAR_CODE, FONT_ATLAS, LOGO_ATLAS, fontCell, measureText } from '../src/game/view/shared/font.js';
 import { decodePng } from '../tools/lib/png.mjs';
 
 /**
@@ -76,6 +76,8 @@ describe('HUD フォントアトラス', () => {
   it('字形はセルの左上 5×7 に収まる（字送り 6 px が隣を消さない根拠）', () => {
     for (let index = 0; index < columns * rows; index++) {
       const charCode = firstCharCode + index;
+      // 塗りつぶしのセルだけはセルいっぱいを埋める（引き伸ばして矩形にするため）
+      if (charCode === FILL_CHAR_CODE) continue;
       for (let y = 0; y < cell; y++) {
         for (let x = 0; x < cell; x++) {
           if (x < glyphWidth && y < glyphHeight) continue;
@@ -108,8 +110,10 @@ describe('HUD フォントアトラス', () => {
     }
   });
 
-  it('0x7F は塗りつぶしのセル（HUD のパネルと帯に使う）', () => {
-    expect(glyphRows(0x7f)).toEqual(Array.from({ length: glyphHeight }, () => '#####'));
+  it('0x7F はセルいっぱいの塗りつぶし（引き伸ばして矩形にする）', () => {
+    // 5×7 のまま焼くと、パネルが指定した寸法の 5/8 × 7/8 にしか広がらない。
+    // 実画面でパネルの右と下が欠けて出たので、このセルだけ例外にしてある
+    expect(inkedPixels(FILL_CHAR_CODE)).toBe(cell * cell);
   });
 
   it('セル番号の範囲外は null を返す', () => {

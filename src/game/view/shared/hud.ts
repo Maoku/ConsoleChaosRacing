@@ -41,12 +41,19 @@ import { PLAYER_ENTRANT, safeAreaOf } from './variants.js';
  * 左揃えのままで数字の桁を縦に揃えるためである。
  */
 
-interface HudStyle {
+/**
+ * 画面に出る文字の世代差。**HUD だけでなく、タイトル・カウントダウン・
+ * リザルトもこの 1 つの表を通る**（`view/overlay.ts` / `view/title.ts`）。
+ *
+ * どの画面でも「FC は単色でパネル無し、SFC は影付き 2 色、PS1・PS2 は半透明パネル」
+ * が揃うので、画面を移っても世代の性格が変わらない。
+ */
+export interface TextStyle {
   /** 拡大率。内部解像度が上がる世代だけ大きくする */
   readonly scale: number;
-  /** ラベル（POS / LAP / BEST）の色 */
+  /** ラベル（POS / LAP / BEST など、添え物）の色 */
   readonly label: string;
-  /** 数値の色。FC はラベルと同じ ＝ **単色** */
+  /** 主役の色。FC はラベルと同じ ＝ **単色** */
   readonly value: string;
   readonly shadow: TextShadow | null;
   /** 背景パネル。`null` なら置かない（FC は `translucency: none`） */
@@ -57,7 +64,7 @@ interface HudStyle {
   readonly linePitch: number;
 }
 
-const HUD_STYLES: GenerationVariant<HudStyle> = defineGenerationVariant({
+export const TEXT_STYLES: GenerationVariant<TextStyle> = defineGenerationVariant({
   FC: {
     scale: 1,
     label: '#fcfcfc',
@@ -140,7 +147,7 @@ export interface HudBlock {
 }
 
 export interface HudView {
-  readonly style: HudStyle;
+  readonly style: TextStyle;
   readonly blocks: readonly HudBlock[];
   /** パネル → 影 → 文字 の順に並んだスプライト。積む順がそのまま重ね順 */
   readonly sprites: readonly SpriteCommand[];
@@ -223,7 +230,7 @@ export function hudLines(
  */
 export function buildHud(options: HudOptions): HudView {
   const { generation, profile, display } = options;
-  const style = generationValue(HUD_STYLES, generation);
+  const style = generationValue(TEXT_STYLES, generation);
   if (options.screen && !showsRaceHud(options.screen)) return { style, blocks: [], sprites: [] };
   const safe = safeAreaOf(profile);
   const scale = style.scale;
@@ -264,7 +271,7 @@ export function buildHud(options: HudOptions): HudView {
 function blockSprites(
   block: HudBlock,
   options: HudOptions,
-  style: HudStyle,
+  style: TextStyle,
   pitch: number,
 ): SpriteCommand[] {
   const { generation, profile } = options;

@@ -33,7 +33,9 @@ function blendableCommands(frame: RenderFrame) {
  * 代用しているだけで、走査線あたりの上限を数えるときは除く。
  */
 function isBackgroundPlane(id: string): boolean {
-  return id.startsWith('minimap-panel') || id.startsWith('hud-');
+  return (
+    id.startsWith('minimap-panel') || id.startsWith('hud-') || id.startsWith('screen-')
+  );
 }
 
 describe('能力契約', () => {
