@@ -13,7 +13,12 @@ export const ACTIONS = defineActions({
   steer: 'axis1d',
   throttle: 'button',
   brake: 'button',
-  glance: 'button',
+  /**
+   * 視点の切り替え（実装計画 8-5）。第3・第4世代でだけ効く。
+   * 未実装のまま枠だけ残っていた `glance`（後方確認）を置き換えたもので、
+   * **実装しない機能の枠は残さない**
+   */
+  viewCycle: 'button',
   genPrev: 'button',
   genNext: 'button',
   /** 世代の直接指定（実装計画 8-7）。番号は HUD のチャンネル表記と対応する */
@@ -43,7 +48,7 @@ const BINDINGS: ActionBindings<RacingActions> = {
   },
   throttle: { keys: ['KeyZ', 'Space'], gamepadButtons: [0], holdRampMs: 180 },
   brake: { keys: ['KeyX', 'ArrowDown'], gamepadButtons: [1], holdRampMs: 180 },
-  glance: { keys: ['ArrowUp'], gamepadButtons: [3] },
+  viewCycle: { keys: ['KeyC'], gamepadButtons: [3] },
   genPrev: { keys: ['KeyQ'], gamepadButtons: [4] },
   genNext: { keys: ['KeyE'], gamepadButtons: [5] },
   // ゲームパッドには割り当てない。4 ボタンを世代へ潰すと運転の操作が足りなくなる

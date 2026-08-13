@@ -11,6 +11,11 @@ import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
 } from '../game/view/shared/car-sprite.js';
+import {
+  COCKPIT_ATLAS,
+  WHEEL_ATLAS,
+  cockpitAvailable,
+} from '../game/view/shared/cockpit.js';
 import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
@@ -70,6 +75,17 @@ const tachometerAtlases = GENERATION_IDS.flatMap((generation) => {
     ? [{ url: layout.url, columns: TACHO_ATLAS.columns, rows: TACHO_ATLAS.rows }]
     : [];
 });
+
+/**
+ * 内装とステアリング（生成物 / tools/build-cockpit.mjs）。
+ * 視点の表（`CAMERA_VIEWS`）に `cockpit` を持つ世代だけが読む
+ */
+const cockpitAtlases = GENERATION_IDS.some((generation) => cockpitAvailable(generation))
+  ? [
+      { url: COCKPIT_ATLAS.url, columns: COCKPIT_ATLAS.columns, rows: COCKPIT_ATLAS.rows },
+      { url: WHEEL_ATLAS.url, columns: WHEEL_ATLAS.columns, rows: WHEEL_ATLAS.rows },
+    ]
+  : [];
 
 const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
   const lod = TRACK_MESH_LODS[generation];
@@ -131,6 +147,8 @@ export const MANIFEST: RenderAssetManifest = {
     // 生成物（tools/build-gauge.mjs・フェーズ 8-3）。第3・第4世代だけが持つ。
     // アナログのメーターは 3D 世代の HUD の作法で、出ないこと自体が世代差になる
     ...tachometerAtlases,
+    // 生成物（tools/build-cockpit.mjs・フェーズ 8-5）。内装は第4世代だけが持つ
+    ...cockpitAtlases,
   ],
   models: [
     { url: 'assets/gen3/models/car.glb', polygonSort: true },

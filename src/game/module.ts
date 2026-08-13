@@ -13,6 +13,7 @@ import { acceptsDriving, createFlow, stepFlow } from './flow/screens.js';
 import { createRacingActionMap, requestedGeneration } from './input/bindings.js';
 import { VEHICLE, type VehicleControl } from './sim/vehicle.js';
 import { buildGenerationView } from './view/index.js';
+import { cycleCameraView, type CameraViewId } from './view/shared/camera.js';
 import { createDisplayLatch } from './view/shared/display-state.js';
 import { PLAYER_ENTRANT, profileOf } from './view/shared/variants.js';
 
@@ -30,6 +31,12 @@ export const racingModule: GameModule = {
     const flow = createFlow();
     const display = createDisplayLatch();
     let seconds = 0;
+    /**
+     * 視点（8-5）。**「見た目のためだけの状態」**（§2.1）なのでここが持ち、
+     * シムへは一切渡さない。世代を切り替えたとき、移った先に無い視点なら
+     * 各ビューが `resolveCameraView()` で追走視点へ落とす
+     */
+    let cameraView: CameraViewId = 'chase';
 
     if (import.meta.env.DEV) {
       // 開発時の手動検証用。カウントダウンやリザルトの画面は 3 周走らないと出ないので、
@@ -65,6 +72,11 @@ export const racingModule: GameModule = {
         const requested = requestedGeneration(input);
         // 表示中の世代を要求しても `request()` が偽を返すだけで演出は起きない
         if (requested) context.generation.request(requested);
+
+        // 視点の切り替え（8-5）。視点が 1 つしか無い世代では押しても変わらない
+        if (input.viewCycle.pressed) {
+          cameraView = cycleCameraView(context.generation.generation, cameraView);
+        }
 
         const control: VehicleControl = {
           steer: input.steer,
@@ -112,6 +124,7 @@ export const racingModule: GameModule = {
             screen: flow.screen,
             screenTicks: flow.screenTicks,
             paused: flow.paused,
+            cameraView,
           });
         }
       },

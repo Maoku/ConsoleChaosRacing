@@ -9,6 +9,7 @@ import type { ScreenId } from '../../src/game/flow/screens.js';
 import { stepRace } from '../../src/game/sim/race.js';
 import { createRaceState, type RaceState } from '../../src/game/sim/state.js';
 import { buildGenerationView } from '../../src/game/view/index.js';
+import type { CameraViewId } from '../../src/game/view/shared/camera.js';
 import { createDisplayLatch } from '../../src/game/view/shared/display-state.js';
 
 /** 指定ティックまで進めたレース。テストどうしで使い回さないよう毎回作る */
@@ -28,6 +29,7 @@ export function buildFrame(
   seconds = 10,
   renderedGenerations = 1,
   screen: ScreenId = 'racing',
+  cameraView: CameraViewId = 'chase',
 ): RenderFrame {
   const profile = HARDWARE_GENERATION_PROFILES[generation];
   const frame = createRenderFrame();
@@ -42,6 +44,7 @@ export function buildFrame(
     screen,
     screenTicks: state.tick,
     paused: false,
+    cameraView,
   });
   return frame;
 }

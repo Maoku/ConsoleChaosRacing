@@ -11,7 +11,8 @@ import type {
 
 import type { ViewContext } from './context.js';
 import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
-import { followCamera } from './shared/camera.js';
+import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
+import { cockpitSprites } from './shared/cockpit.js';
 import { ENVIRONMENT_MAP, SKYLINE, SUN_DIRECTION, equirectU } from './shared/environment.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
@@ -109,7 +110,10 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
   const player = display.cars[PLAYER_ENTRANT];
   if (!lod || !carModel || !player) return;
 
-  const camera = followCamera({ track, car: player });
+  // 視点は自分の世代にあるものへ落とす（8-5）。内装があるのはこの世代だけ
+  const view = resolveCameraView(generation, context.cameraView ?? 'chase');
+  const hidePlayer = hidesPlayerCar(view);
+  const camera = viewCamera({ track, car: player, view });
   frame.camera = camera;
 
   for (const background of skylineBackgrounds(generation, profile, camera)) {
@@ -198,6 +202,9 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
   frame.materials.push(shadowMaterial);
 
   for (const car of display.cars) {
+    // 車内からの視点では自機を積まない。**影専用メッシュも積まない** —
+    // 車体が無いのに影だけが路面へ落ちていたら、そちらのほうが目立つ
+    if (hidePlayer && car.entrant === PLAYER_ENTRANT) continue;
     const ground = track.toWorld(car.s, car.lateral);
     const away = Math.hypot(
       ground[0] - camera.position[0],
@@ -227,6 +234,14 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
       groundY: ground[1],
       generations: [generation],
     } satisfies MeshCommand);
+  }
+
+  // ── 内装（8-5）。カメラは `windshield` と同じで、被せる 1 枚だけが違う。
+  // HUD とミニマップより先に積むので、数字は内装の上に出る
+  if (view === 'cockpit') {
+    for (const sprite of cockpitSprites({ generation, profile, car: player })) {
+      frame.sprites.push(sprite);
+    }
   }
 
   pushMinimap(frame, {

@@ -6,6 +6,7 @@ import type {
 
 import type { ScreenId } from '../flow/screens.js';
 import type { RaceState } from '../sim/state.js';
+import type { CameraViewId } from './shared/camera.js';
 import type { DisplaySnapshot } from './shared/display-state.js';
 
 /**
@@ -39,6 +40,13 @@ export interface ViewContext {
   /** その画面に入ってからの tick。点滅や演出の時計 */
   readonly screenTicks: number;
   readonly paused: boolean;
+  /**
+   * 視点（実装計画 8-5）。**「見た目のためだけの状態」**（§2.1）であり、
+   * シムへは一切渡らない。`module.ts` が 1 つ持ち、各ビューは
+   * `resolveCameraView()` で自分の世代にある視点へ落としてから使う。
+   * 省略時は追走視点 — 視点を知らないテストやビューはこれまでどおり動く。
+   */
+  readonly cameraView?: CameraViewId;
 }
 
 export type ViewBuilder = (frame: RenderFrame, context: ViewContext) => void;

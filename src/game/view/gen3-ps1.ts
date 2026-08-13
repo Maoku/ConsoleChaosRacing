@@ -7,7 +7,7 @@ import type {
 
 import type { ViewContext } from './context.js';
 import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
-import { followCamera } from './shared/camera.js';
+import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
 import {
@@ -61,7 +61,9 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
   const player = display.cars[PLAYER_ENTRANT];
   if (!lod || !carModel || !player) return;
 
-  frame.camera = followCamera({ track, car: player });
+  // 視点は自分の世代にあるものへ落とす（8-5）。第3世代は追走とフロントガラスの 2 つ
+  const view = resolveCameraView(generation, context.cameraView ?? 'chase');
+  frame.camera = viewCamera({ track, car: player, view });
 
   frame.backgrounds.push({
     color: HORIZON,
@@ -110,12 +112,15 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
   frame.materials.push(carMaterial);
 
   // 同じスロットの中では登録順が保たれる。遠い車から積んで、近い車を後に描く
+  const hidePlayer = hidesPlayerCar(view);
   const camera = frame.camera.position;
   const ordered = [...display.cars].sort((left, right) => {
     return distanceTo(track, camera, right) - distanceTo(track, camera, left);
   });
 
   for (const car of ordered) {
+    // 車内からの視点では自機を積まない。運転席から自分の車体は見えない
+    if (hidePlayer && car.entrant === PLAYER_ENTRANT) continue;
     const groundY = track.toWorld(car.s, car.lateral)[1];
     frame.meshes.push({
       id: `car-${generation}-${car.entrant}`,
