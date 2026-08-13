@@ -13,6 +13,7 @@ import type { ViewContext } from './context.js';
 import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
 import { followCamera } from './shared/camera.js';
 import { ENVIRONMENT_MAP, SKYLINE, SUN_DIRECTION, equirectU } from './shared/environment.js';
+import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
 import {
   trackMeshLodFor,
@@ -236,6 +237,10 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     rect: defaultMinimapRect(generation, profile),
     frameIndex: display.frameIndex,
   });
+
+  // HUD は最後 ＝ 最前面。深度バッファがあってもスクリーン空間スプライトは
+  // シーンの末尾へ合成されるので、積んだ順がそのまま重ね順になる
+  pushHud(frame, { generation, profile, display });
 }
 
 /** カメラの向き。方位はワールドの `atan2(z, x)`、ピッチは見下ろしが負 */

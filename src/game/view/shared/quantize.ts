@@ -31,6 +31,24 @@ export function snapToTile(value: number, profile: HardwareGenerationProfile): n
   return Math.round(value / snap) * snap;
 }
 
+/**
+ * タイル境界へ**内側に向かって**丸める（`floorToTile` は左・上、`ceilToTile` は右・下）。
+ *
+ * 安全領域の縁に置く物には `snapToTile`（最近傍）を使えない。四捨五入だと
+ * 縁の外へはみ出すことがあり、オーバースキャンで切れる。HUD の配置はこちらを通す。
+ */
+export function floorToTile(value: number, profile: HardwareGenerationProfile): number {
+  const snap = profile.video.tileSnap;
+  if (!Number.isFinite(snap) || snap <= 1) return value;
+  return Math.floor(value / snap) * snap;
+}
+
+export function ceilToTile(value: number, profile: HardwareGenerationProfile): number {
+  const snap = profile.video.tileSnap;
+  if (!Number.isFinite(snap) || snap <= 1) return value;
+  return Math.ceil(value / snap) * snap;
+}
+
 /** 2 値をまとめて丸める版。スプライト座標に使う。 */
 export function snapPointToTile(
   x: number,

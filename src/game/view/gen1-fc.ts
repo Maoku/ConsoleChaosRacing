@@ -16,6 +16,7 @@ import {
   scanlineItem,
   type CarPlacementOptions,
 } from './shared/car-sprite.js';
+import { buildHud } from './shared/hud.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { FC_CAMERA, createRoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
@@ -133,11 +134,14 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   }
 
   // 走査線制限・重ね順・BG 相当の扱いは `sprite-plane.ts` に集約してある。
-  // ミニマップの枠だけは BG 相当なので制限の外に置き、最背面へ回す
+  // ミニマップの枠と HUD の文字は BG 相当なので制限の外。枠は最背面、
+  // HUD は最前面（実機の BG 面も優先度ビットでスプライトの前後どちらにも置けた）
+  const hud = buildHud({ generation, profile, display });
   const culled = pushSpritePlane(frame, {
     profile,
     entries,
     background: [minimap.panelSprite],
+    foreground: hud.sprites,
   });
   flicker.commit(culled);
 }

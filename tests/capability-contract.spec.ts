@@ -25,6 +25,17 @@ function blendableCommands(frame: RenderFrame) {
   return [...frame.sprites, ...frame.materials, ...frame.meshes];
 }
 
+/**
+ * 実機で BG タイル面に描かれていたもの（ミニマップの枠・HUD の文字とパネル）。
+ *
+ * これらはスプライト枠を消費しなかったので、`applyScanlineLimit` の対象外に置いてある
+ * （実装計画 §3.6 の決定）。本エンジンにはタイル面の API が無いためスプライトで
+ * 代用しているだけで、走査線あたりの上限を数えるときは除く。
+ */
+function isBackgroundPlane(id: string): boolean {
+  return id.startsWith('minimap-panel') || id.startsWith('hud-');
+}
+
 describe('能力契約', () => {
   describe('半透明（translucency）', () => {
     for (const generation of GENERATION_IDS) {
@@ -121,7 +132,7 @@ describe('能力契約', () => {
         // 車は**絵のある範囲**だけを数える（セルの透明部分は実機ではタイルを置かない）
         const counters = new Int32Array(profile.video.internalHeight);
         for (const sprite of frame.sprites) {
-          if (sprite.id.startsWith('minimap-panel')) continue;
+          if (isBackgroundPlane(sprite.id)) continue;
           const size = sprite.size[1];
           const isCar = sprite.id.startsWith('car-sprite-');
           const ground = isCar ? sprite.position[1] + (0.86 - 0.5) * size : sprite.position[1] + size / 2;
@@ -156,13 +167,16 @@ describe('能力契約', () => {
   });
 
   describe('スプライトの重ね順', () => {
-    it('FC は自機が最前面に、ミニマップの枠が最背面に来る', () => {
+    it('FC はミニマップの枠が最背面・HUD が最前面・その間で自機が最も手前に来る', () => {
       const frame = buildFrame('FC', raceAfter(1500));
       const ids = frame.sprites.map((sprite) => sprite.id);
       expect(ids[0]).toMatch(/^minimap-panel/);
+      // HUD は BG 相当（優先度つき）なので、走査線制限の外で最前面に積まれる
+      expect(ids[ids.length - 1]).toMatch(/^hud-/);
       // 実機の OAM は番号が若いほど優先度が高く、かつ手前に出る。
       // 登録順は 自機 → マーカー → ライバル なので、積む順はその逆になる
-      expect(ids[ids.length - 1]).toBe('car-sprite-FC-0');
+      const limited = ids.filter((id) => !isBackgroundPlane(id));
+      expect(limited[limited.length - 1]).toBe('car-sprite-FC-0');
     });
   });
 });

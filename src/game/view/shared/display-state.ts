@@ -27,6 +27,12 @@ export interface DisplayCar {
   readonly offTrack: boolean;
   readonly lateralAccel: number;
   readonly longitudinalAccel: number;
+  // ── HUD が読む値。ラップタイムも表示の更新レートで止まる（実装計画 §3.5）
+  /** 現在の周が始まった tick。まだラインを越えていなければ -1 */
+  readonly lapStartTick: number;
+  /** ベストラップのティック数。未計測は -1 */
+  readonly bestLapTicks: number;
+  readonly finished: boolean;
 }
 
 export interface DisplaySnapshot {
@@ -34,6 +40,16 @@ export interface DisplaySnapshot {
   readonly frameIndex: number;
   /** 量子化された時刻 [s] */
   readonly seconds: number;
+  /**
+   * この写しを取ったときのシムのティック。
+   *
+   * ラップタイムの表示はこれと `lapStartTick` の差で作る。`RaceState.tick` を
+   * 直接引くと**時計だけが 60Hz で動いてしまい**、第1世代で車が 6Hz なのに
+   * ミリ秒表示だけがなめらかに回る、という食い違いが出る。
+   */
+  readonly tick: number;
+  /** カウントダウンの残り tick。`RacePhase` の遷移も表示のレートで見える */
+  readonly countdown: number;
   readonly cars: readonly DisplayCar[];
 }
 
@@ -57,6 +73,9 @@ function copyCar(car: CarState): DisplayCar {
     offTrack: car.offTrack,
     lateralAccel: car.lateralAccel,
     longitudinalAccel: car.longitudinalAccel,
+    lapStartTick: car.lapStartTick,
+    bestLapTicks: car.bestLapTicks,
+    finished: car.finished,
   };
 }
 
@@ -74,6 +93,8 @@ export function createDisplayLatch(): DisplayLatch {
       const snapshot: DisplaySnapshot = {
         frameIndex,
         seconds: hz > 0 ? frameIndex / hz : state.tick / 60,
+        tick: state.tick,
+        countdown: state.countdown,
         cars: state.cars.map(copyCar),
       };
       perGeneration.set(generation, snapshot);

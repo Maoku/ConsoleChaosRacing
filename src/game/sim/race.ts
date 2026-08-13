@@ -17,9 +17,15 @@ export function tickToSeconds(ticks: number): number {
   return ticks * FIXED_DT_SECONDS;
 }
 
-/** 「1:23.456」形式へ。未計測は「--:--.---」 */
+/**
+ * 「1:23.456」形式へ。未計測は「-:--.---」。
+ *
+ * 未計測の見出しを**計測済みと同じ 8 文字**にしてあるのは HUD の都合で、
+ * 字数が違うと「TIME」と「BEST」の桁が縦に揃わなくなる（§3.5）。
+ * 3 周のレースで 10 分を越えることは無いので、分は 1 桁で足りる。
+ */
 export function formatLapTime(ticks: number): string {
-  if (ticks < 0) return '--:--.---';
+  if (ticks < 0) return '-:--.---';
   const totalMs = Math.round(tickToSeconds(ticks) * 1000);
   const minutes = Math.floor(totalMs / 60000);
   const seconds = Math.floor((totalMs % 60000) / 1000);

@@ -57,6 +57,14 @@ export const LOGO_ATLAS = {
   height: 64,
 } as const;
 
+/**
+ * 0x7F（DEL）のセルには**塗りつぶし**が焼いてある。
+ *
+ * 単色の矩形（HUD のパネル・カウントダウンの帯）を出すのにフォントアトラス 1 枚で足り、
+ * ミニマップのマーカーアトラスへ切り替えなくて済む。
+ */
+export const FILL_CHAR_CODE = 0x7f;
+
 /** アトラス内のセル番号。範囲外の文字は `null`（描かない） */
 export function fontCell(charCode: number): number | null {
   const cell = charCode - FONT_ATLAS.firstCharCode;
@@ -64,10 +72,22 @@ export function fontCell(charCode: number): number | null {
   return cell;
 }
 
+/**
+ * その世代の字送り [px]（拡大前）。
+ *
+ * **タイル境界を持つ世代（FC）では 8 px** になる。実機の HUD 文字は BG タイル面に
+ * 描かれ、1 文字が 1 タイルを占めていたので、字間がタイルの一辺そのものだった。
+ * 以降の世代は字形の幅どおりに詰まる。世代 ID を見ずに `tileSnap` から導けるので、
+ * この 1 行が FC と SFC の HUD の見た目の差をそのまま作る（能力契約 §1.4）。
+ */
+export function fontAdvance(tileSnap: number): number {
+  return Number.isFinite(tileSnap) && tileSnap > FONT_ATLAS.advance ? tileSnap : FONT_ATLAS.advance;
+}
+
 /** 文字列の描画幅 [px]。最後の 1 文字ぶんの隙間は含めない */
-export function measureText(text: string, scale = 1): number {
+export function measureText(text: string, scale = 1, advance: number = FONT_ATLAS.advance): number {
   if (text.length === 0) return 0;
-  return (text.length * FONT_ATLAS.advance - (FONT_ATLAS.advance - FONT_ATLAS.glyphWidth)) * scale;
+  return (text.length * advance - (advance - FONT_ATLAS.glyphWidth)) * scale;
 }
 
 /** 文字列の描画高さ [px]。セルではなく**字形**の高さ（行間はビュー側が決める） */

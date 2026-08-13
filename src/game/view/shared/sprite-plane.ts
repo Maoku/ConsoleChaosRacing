@@ -17,7 +17,9 @@ import {
  *    手前に描くので、**登録順とは逆に積む**。
  *
  * 枠や HUD の文字は実機では BG タイル面に描かれ、スプライト枠を消費しなかった。
- * `background` はその扱い — 制限の対象外で、最背面に積む。
+ * `background` / `foreground` はその扱い — どちらも制限の対象外で、
+ * 前者は最背面、後者は最前面に積む。実機の BG 面もスプライトの前後どちらにも置けた
+ * （優先度ビット）ので、ミニマップの枠は背面・HUD の文字は前面、という分け方になる。
  */
 
 export interface SpriteEntry {
@@ -37,6 +39,8 @@ export interface SpritePlaneOptions {
   readonly entries: readonly SpriteEntry[];
   /** BG 相当。制限の対象外で最背面に積む */
   readonly background?: readonly SpriteCommand[];
+  /** BG 相当（優先度つき）。制限の対象外で最前面に積む。HUD の文字がこれ */
+  readonly foreground?: readonly SpriteCommand[];
 }
 
 /** 走査線制限を適用してフレームへ積む。戻り値は制限で落ちたエントラント */
@@ -55,6 +59,7 @@ export function pushSpritePlane(
   for (let index = limited.visible.length - 1; index >= 0; index--) {
     for (const sprite of limited.visible[index]!.sprites) frame.sprites.push(sprite);
   }
+  for (const sprite of options.foreground ?? []) frame.sprites.push(sprite);
 
   return limited.culled;
 }

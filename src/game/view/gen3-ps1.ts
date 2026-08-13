@@ -8,6 +8,7 @@ import type {
 import type { ViewContext } from './context.js';
 import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
 import { followCamera } from './shared/camera.js';
+import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
 import {
   trackMeshLodFor,
@@ -139,6 +140,10 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
     rect: defaultMinimapRect(generation, profile),
     frameIndex: display.frameIndex,
   });
+
+  // HUD は最後 ＝ 最前面。スクリーン空間スプライトは固定スロット 10 へ入り、
+  // 同じスロットの中では積んだ順が保たれる
+  pushHud(frame, { generation, profile, display });
 }
 
 function distanceTo(

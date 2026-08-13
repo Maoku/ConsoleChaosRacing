@@ -12,6 +12,7 @@ import {
   type CarPlacementOptions,
   type CarSpritePlacement,
 } from './shared/car-sprite.js';
+import { buildHud } from './shared/hud.js';
 import { MARKER_ATLAS } from './shared/minimap-layout.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { SFC_CAMERA, SFC_DRAW_DISTANCE, createRoadView, type RoadView } from './shared/projection.js';
@@ -151,8 +152,14 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   }
 
   // 32 スプライト/走査線なので実質かからないが、契約は同じように守る。
-  // 枠は BG 相当なので制限の外（§3.6）
-  pushSpritePlane(frame, { profile, entries, background: [minimap.panelSprite] });
+  // 枠と HUD は BG 相当なので制限の外（§3.6）
+  const hud = buildHud({ generation, profile, display });
+  pushSpritePlane(frame, {
+    profile,
+    entries,
+    background: [minimap.panelSprite],
+    foreground: hud.sprites,
+  });
 }
 
 /** 1 台ぶん — 落ち影とスプライト本体。落ちるときは影ごと落ちる */
