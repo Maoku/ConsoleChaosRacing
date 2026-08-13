@@ -34,23 +34,40 @@ import type { DisplayCar } from './display-state.js';
  */
 export const CAMERA = {
   /** 自機の後方距離 [m]。車体を画面の主役にする */
-  BEHIND: 4.4,
+  BEHIND: 3.2,
   /** 高さ [m]。見下ろしを浅くして速度感を出す（路面高からの相対） */
-  HEIGHT: 1.55,
+  HEIGHT: 1.25,
   /** 注視点の前方距離 [m]。遠いままだと車が画面下端へ落ちる */
-  LOOK_AHEAD: 9,
+  LOOK_AHEAD: 7,
   /** 注視点の高さ [m] */
-  TARGET_HEIGHT: 0.75,
+  TARGET_HEIGHT: 0.7,
   /** 停止時の画角 [deg] */
   FOV_MIN: 60,
   /** 最高速時の画角 [deg] */
   FOV_MAX: 72,
-  /** 最高速時に後方へ伸びる距離 [m]。最高速でも 5.5 m に収める */
-  BEHIND_STRETCH: 1.1,
+  /** 最高速時に後方へ伸びる距離 [m]。最高速でも 4.1 m に収める */
+  BEHIND_STRETCH: 0.9,
   /** 横位置の追従率。1 なら車の真後ろ、0 ならコース中心の後ろ */
   LATERAL_FOLLOW: 0.55,
   /** 注視点の横位置の追従率 */
   TARGET_LATERAL_FOLLOW: 0.3,
+  /**
+   * カメラが自機の横位置から**遅れてよい上限** [m]。
+   *
+   * 追従率だけで作ると、遅れ（`lateral × (1 − 追従率)`）が横位置に比例して
+   * 際限なく伸びる。コースアウトして路面から 15 m 出ると遅れも 6.8 m になり、
+   * **自機が画面の外へ流れて見えなくなる**。上限で切ると、どれだけ外へ出ても
+   * 自機はカメラの正面から `LATERAL_LAG_MAX` メートル以内に留まる。
+   *
+   * 値は**ミニマップの矩形から決めた**。上限に張り付いたときの自機は画面の横 63 %
+   * の位置に来る（実測）。ミニマップの左端は第3・第4世代とも画面の 68 % なので、
+   * 車体の幅を含めても**ミニマップの下へ潜らない**。
+   * 上限に当たり始めるのは |lateral| > 2.7 m からで、走行ラインの振れ幅の中では
+   * カメラがコーナーの内側へ膨らむ見え方がそのまま残る。
+   */
+  LATERAL_LAG_MAX: 1.2,
+  /** 注視点の遅れの上限 [m]。カメラより小さく採り、視線を自機へ寄せる */
+  TARGET_LAG_MAX: 0.6,
 } as const;
 
 /**
@@ -116,6 +133,20 @@ export interface FollowCameraOptions {
 }
 
 /**
+ * カメラ（または注視点）の横位置 [m]。
+ *
+ * 追従率のぶんだけ自機から遅れるが、**遅れには上限がある**。
+ * 上限が無いと、コースアウトして横へ 15 m 出たときに遅れも 6.8 m に伸び、
+ * 自機が画面の外へ流れて見えなくなる（8-4 の追記）。
+ *
+ * 路面の内側では上限に当たらないので、走行中の見え方は追従率だけのときと同じ。
+ */
+export function followLateral(lateral: number, follow: number, maxLag: number): number {
+  const lag = lateral * (1 - follow);
+  return lateral - Math.max(-maxLag, Math.min(maxLag, lag));
+}
+
+/**
  * 自機の後方から追うカメラ。
  * 速度が上がるほど画角が広がり、カメラが少し引く。これだけで速度感が変わる。
  */
@@ -123,10 +154,13 @@ export function followCamera({ track, car }: FollowCameraOptions): CameraCommand
   const speedRatio = Math.min(1, Math.max(0, car.speed / VEHICLE.MAX_SPEED));
   const behind = CAMERA.BEHIND + CAMERA.BEHIND_STRETCH * speedRatio;
 
-  const eye = track.toWorld(car.s - behind, car.lateral * CAMERA.LATERAL_FOLLOW);
+  const eye = track.toWorld(
+    car.s - behind,
+    followLateral(car.lateral, CAMERA.LATERAL_FOLLOW, CAMERA.LATERAL_LAG_MAX),
+  );
   const focus = track.toWorld(
     car.s + CAMERA.LOOK_AHEAD,
-    car.lateral * CAMERA.TARGET_LATERAL_FOLLOW,
+    followLateral(car.lateral, CAMERA.TARGET_LATERAL_FOLLOW, CAMERA.TARGET_LAG_MAX),
   );
 
   return {
