@@ -3,6 +3,7 @@ import {
   HARDWARE_GENERATION_PROFILES,
   createRenderFrame,
   generationSupportsHardwareBlend,
+  generationValue,
   type GenerationId,
 } from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
@@ -10,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { stepRace } from '../src/game/sim/race.js';
 import { createDisplayLatch } from '../src/game/view/shared/display-state.js';
 import { FONT_ATLAS, fontAdvance, measureText } from '../src/game/view/shared/font.js';
-import { buildHud, hudLines, pushHud } from '../src/game/view/shared/hud.js';
+import { GENERATION_LABELS, buildHud, hudLines, pushHud } from '../src/game/view/shared/hud.js';
 import { safeAreaOf } from '../src/game/view/shared/variants.js';
 import { buildFrame, raceAfter } from './support/frame.js';
 
@@ -57,15 +58,34 @@ describe('HUD', () => {
 
   it('順位・周回・速度・ラップタイムがすべて出ている', () => {
     const { display } = snapshotAt('PS2', 3600);
-    const texts = hudLines(display, '4TH GEN PS2').flatMap((block) =>
-      block.lines.map((line) => line.text),
-    );
+    const label = generationValue(GENERATION_LABELS, 'PS2');
+    const texts = hudLines(display, label).flatMap((block) => block.lines.map((line) => line.text));
     expect(texts.some((text) => /^POS \d\/8$/.test(text))).toBe(true);
     expect(texts.some((text) => /^LAP \d\/3$/.test(text))).toBe(true);
     expect(texts.some((text) => /^TIME [\d-]/.test(text))).toBe(true);
     expect(texts.some((text) => /^BEST [\d-]/.test(text))).toBe(true);
     expect(texts.some((text) => /^\s*\d+ KM\/H$/.test(text))).toBe(true);
-    expect(texts).toContain('4TH GEN PS2');
+    expect(texts).toContain(label);
+  });
+
+  it('名札はチャンネル表記で、番号が世代選択キーと対応する（8-8）', () => {
+    // `1`〜`4` キー（8-7）と番号が一致していることが、
+    // 「テレビのチャンネルを回すと世代が変わる」という見立ての根拠になる
+    GENERATION_IDS.forEach((generation, index) => {
+      expect(generationValue(GENERATION_LABELS, generation)).toBe(
+        `CH ${index + 1} : ${['1ST', '2ND', '3RD', '4TH'][index]} GEN`,
+      );
+    });
+  });
+
+  it('名札は左上の塊の 1 行目で、左下は速度 1 行だけになる（8-8）', () => {
+    const { display } = snapshotAt('PS1', 1500);
+    const blocks = hudLines(display, generationValue(GENERATION_LABELS, 'PS1'));
+    expect(blocks[0]!.id).toBe('standing');
+    expect(blocks[0]!.lines[0]!.text).toBe('CH 3 : 3RD GEN');
+    expect(blocks[0]!.lines.length).toBe(3);
+    expect(blocks[2]!.id).toBe('speed');
+    expect(blocks[2]!.lines.length).toBe(1);
   });
 
   it('ラップタイムの 2 行が同じ字数で、桁が縦に揃う', () => {

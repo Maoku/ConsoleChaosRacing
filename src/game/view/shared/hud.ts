@@ -118,12 +118,17 @@ export const TEXT_STYLES: GenerationVariant<TextStyle> = defineGenerationVariant
 /**
  * 世代の名札。**HUD にこれが出ていること**が、いま何世代目を見ているかの唯一の説明になる。
  * 切替演出中は 2 つが重なって見え、そのこと自体が切り替わっている印になる。
+ *
+ * 表記はハードウェア名ではなく**チャンネル番号**にする（実装計画 8-8）。
+ * 番号が `1`〜`4` キーでの世代選択（8-7）とそのまま対応するので、
+ * **テレビのチャンネルを回すと世代が変わる**という見立てが表示と操作で揃う。
+ * 切替演出中はチャンネル番号が 2 つ同時に見え、「回している最中」として読める。
  */
 export const GENERATION_LABELS: GenerationVariant<string> = defineGenerationVariant({
-  FC: '1ST GEN FC',
-  SFC: '2ND GEN SFC',
-  PS1: '3RD GEN PS1',
-  PS2: '4TH GEN PS2',
+  FC: 'CH 1 : 1ST GEN',
+  SFC: 'CH 2 : 2ND GEN',
+  PS1: 'CH 3 : 3RD GEN',
+  PS2: 'CH 4 : 4TH GEN',
 });
 
 /** m/s → km/h */
@@ -185,9 +190,13 @@ function currentLapText(display: DisplaySnapshot, car: DisplayCar): string {
 /**
  * HUD が表示する 3 つの塊の中身。
  *
- * 世代に依るのは左下 2 行目の名札だけで、**残りは 4 世代で完全に同じ文字列**になる。
+ * 世代に依るのは左上 1 行目の名札だけで、**残りは 4 世代で完全に同じ文字列**になる。
  * 見た目（色・拡大率・字送り・半透明）が変わっても、書いてある数字は
  * 1 つのシミュレーションから出た同じ値である — ミニマップと同じ主張の、文字版。
+ *
+ * 名札を左上へ置いてあるのは、**チャンネル表示はいちばん先に目に入る場所**に
+ * あるべきだからで（8-8）、左下は速度 1 行だけになり、その左隣が
+ * タコメーター（8-3・第3/第4世代のみ）の居場所になる。
  */
 export function hudLines(
   display: DisplaySnapshot,
@@ -199,6 +208,8 @@ export function hudLines(
     {
       id: 'standing',
       lines: [
+        // 「いま何チャンネルか」はシムが知らない唯一の表示。ビューが足す
+        { text: generationLabel, emphasis: false },
         { text: `POS ${player.standing}/${ENTRANT_COUNT}`, emphasis: true },
         {
           text: `LAP ${Math.min(LAP_COUNT, Math.max(1, player.lap))}/${LAP_COUNT}`,
@@ -216,11 +227,7 @@ export function hudLines(
     },
     {
       id: 'speed',
-      lines: [
-        { text: speedText(player), emphasis: true },
-        // 「いま何世代目か」はシムが知らない唯一の表示。ビューが足す
-        { text: generationLabel, emphasis: false },
-      ],
+      lines: [{ text: speedText(player), emphasis: true }],
     },
   ];
 }
