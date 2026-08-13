@@ -20,6 +20,8 @@ import { buildHud } from './shared/hud.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { FC_CAMERA, createRoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
+import { sceneryFor } from './shared/scenery.js';
+import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue } from './shared/variants.js';
 
@@ -67,6 +69,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   const atlas = carSpriteAtlasFor(generation);
   const layout = roadSurfaceFor(generation);
   const backdrop = backdropFor(generation);
+  const scenery = scenerySpriteAtlasFor(generation);
   const player = display.cars[PLAYER_ENTRANT];
   if (!atlas || !layout || !backdrop || !player) return;
 
@@ -129,6 +132,26 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   for (const rival of rivalPlacements(placement, display.cars, player)) {
     const sprite = carSpriteCommand(rival, atlas, profile, generation);
     entries.push({ ...scanlineItem(sprite, atlas.rival, rival.entrant), sprites: [sprite] });
+  }
+
+  // 背景オブジェクト（8-6）は**いちばん後ろに登録する** ＝ 走査線が混んだときに
+  // 最初に消えるのが背景になる。第1世代は 8 スプライト/走査線なので看板 1 種だけ
+  if (scenery) {
+    for (const placed of sceneryPlacements({
+      generation,
+      profile,
+      view,
+      track,
+      objects: sceneryFor(track),
+      atlas: scenery,
+    })) {
+      entries.push({
+        entity: NO_ENTITY,
+        y: placed.y,
+        height: placed.height,
+        sprites: [placed.sprite],
+      });
+    }
   }
 
   // 走査線制限・重ね順・BG 相当の扱いは `sprite-plane.ts` に集約してある。

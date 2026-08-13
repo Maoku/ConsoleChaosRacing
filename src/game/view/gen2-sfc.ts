@@ -17,6 +17,8 @@ import { MARKER_ATLAS } from './shared/minimap-layout.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { SFC_CAMERA, SFC_DRAW_DISTANCE, createRoadView, type RoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
+import { sceneryFor } from './shared/scenery.js';
+import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue, rgb01 } from './shared/variants.js';
 
@@ -75,6 +77,7 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   const atlas = carSpriteAtlasFor(generation);
   const layout = roadSurfaceFor(generation);
   const backdrop = backdropFor(generation);
+  const scenery = scenerySpriteAtlasFor(generation);
   const player = display.cars[PLAYER_ENTRANT];
   if (!atlas || !layout || !backdrop || !player) return;
 
@@ -148,6 +151,26 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
 
   for (const rival of rivalPlacements(placement, display.cars, player)) {
     entries.push(carEntry(rival, placement, generation));
+  }
+
+  // 背景オブジェクト（8-6）は**いちばん後ろに登録する** ＝ 混雑時に最初に消える。
+  // 32 スプライト/走査線あるので、看板に加えて木とタイヤフェンスまで置ける
+  if (scenery) {
+    for (const placed of sceneryPlacements({
+      generation,
+      profile,
+      view,
+      track,
+      objects: sceneryFor(track),
+      atlas: scenery,
+    })) {
+      entries.push({
+        entity: NO_ENTITY,
+        y: placed.y,
+        height: placed.height,
+        sprites: [placed.sprite],
+      });
+    }
   }
 
   // 32 スプライト/走査線なので実質かからないが、契約は同じように守る。

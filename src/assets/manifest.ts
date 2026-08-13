@@ -21,6 +21,10 @@ import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
+import {
+  SCENERY_SPRITES,
+  SCENERY_SPRITE_GEOMETRY,
+} from '../game/view/shared/scenery-sprite.js';
 import { TACHO_ATLAS, TACHOMETERS } from '../game/view/shared/tachometer.js';
 import {
   TRACK_MESH_LODS,
@@ -73,6 +77,20 @@ const roadTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) =
 const backdropTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
   const layout = BACKDROPS[generation];
   return layout ? [{ url: layout.texture, wrap: 'repeat' as const }] : [];
+});
+
+/** 背景オブジェクトのアトラス（生成物 / tools/build-scenery-sprites.mjs・8-6） */
+const sceneryAtlases = GENERATION_IDS.flatMap((generation) => {
+  const layout = SCENERY_SPRITES[generation];
+  return layout
+    ? [
+        {
+          url: layout.url,
+          columns: SCENERY_SPRITE_GEOMETRY.columns,
+          rows: SCENERY_SPRITE_GEOMETRY.rows,
+        },
+      ]
+    : [];
 });
 
 /** タコメーターのアトラス（生成物 / tools/build-gauge.mjs）。FC / SFC は持たない */
@@ -139,6 +157,9 @@ export const MANIFEST: RenderAssetManifest = {
       columns: CAR_SPRITE_GEOMETRY.columns,
       rows: CAR_SPRITE_GEOMETRY.rows,
     })),
+    // 生成物（tools/build-scenery-sprites.mjs・フェーズ 8-6）。
+    // 4 世代が同じ `sceneryObjects()` を読むが、擬似3D の 2 世代だけがスプライトで置く
+    ...sceneryAtlases,
     // 生成物（tools/build-minimap.mjs・フェーズ 1）。
     // 丸 / 四角 / 塗りつぶし。色は SpriteCommand.color で付ける
     { url: MARKER_ATLAS.url, columns: MARKER_ATLAS.columns, rows: MARKER_ATLAS.rows },
