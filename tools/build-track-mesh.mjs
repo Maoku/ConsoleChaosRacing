@@ -40,19 +40,30 @@ const CURB_DROP = 0.08;
 const GRASS_WIDTH = 9;
 /** 草地の外縁の落差 */
 const GRASS_DROP = 0.45;
+/**
+ * 草地の外へ立てる壁の高さ [m]（実装計画 8-6）。
+ *
+ * **コースメッシュへ焼き込む。** `TransformCommand` に X/Z 回転が無い以上、
+ * バンクのついた路面に沿う壁は別メッシュでは置けない（§1.3）。
+ * 三角形は 1 セクターあたり第3世代 +388・第4世代 +248 で、どちらも予算の内側。
+ */
+const WALL_HEIGHT = 1;
 
 // ── アトラスの u 帯（`buildSurfaceTexture` と一致させる）
 const BAND = {
   roadFrom: 0.015,
   roadTo: 0.485,
   curbOuter: 0.515,
-  curbInner: 0.735,
-  grassOuter: 0.765,
-  grassInner: 0.985,
+  curbInner: 0.685,
+  grassOuter: 0.715,
+  grassInner: 0.865,
+  // 壁は下端が帯の下、上端が帯の上（u が縦に貼られる）
+  wallBottom: 0.895,
+  wallTop: 0.985,
 };
 
 // ── v のタイル長 [m]。路面は破線 1 周期、縁石は縞 1 周期
-const TILE = { road: 8, curb: 4, grass: 6 };
+const TILE = { road: 8, curb: 4, grass: 6, wall: 4 };
 
 /**
  * 断面の 1 点。`lateral` は中心線からの右向き距離、`height` は路面からの高さ。
@@ -61,8 +72,14 @@ const TILE = { road: 8, curb: 4, grass: 6 };
 function crossSection(halfWidth, roadSpans) {
   const points = [];
   const push = (lateral, height, u, tile) => points.push({ lateral, height, u, tile });
+  const outer = halfWidth + CURB_WIDTH + GRASS_WIDTH;
 
-  push(-(halfWidth + CURB_WIDTH + GRASS_WIDTH), -GRASS_DROP, BAND.grassOuter, TILE.grass);
+  // 左の壁。**列は上から下へ並べる** — 面の法線は「列の向き × 進行方向」なので、
+  // 上から下へ並べたときだけ法線がコース中心（右）を向く。逆にすると裏面カリングで消える
+  push(-outer, -GRASS_DROP + WALL_HEIGHT, BAND.wallTop, TILE.wall);
+  push(-outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
+
+  push(-outer, -GRASS_DROP, BAND.grassOuter, TILE.grass);
   push(-(halfWidth + CURB_WIDTH), -CURB_DROP, BAND.grassInner, TILE.grass);
   push(-(halfWidth + CURB_WIDTH), -CURB_DROP, BAND.curbOuter, TILE.curb);
   push(-halfWidth, 0, BAND.curbInner, TILE.curb);
@@ -73,16 +90,23 @@ function crossSection(halfWidth, roadSpans) {
   push(halfWidth, 0, BAND.curbInner, TILE.curb);
   push(halfWidth + CURB_WIDTH, -CURB_DROP, BAND.curbOuter, TILE.curb);
   push(halfWidth + CURB_WIDTH, -CURB_DROP, BAND.grassInner, TILE.grass);
-  push(halfWidth + CURB_WIDTH + GRASS_WIDTH, -GRASS_DROP, BAND.grassOuter, TILE.grass);
+  push(outer, -GRASS_DROP, BAND.grassOuter, TILE.grass);
+
+  // 右の壁は逆に、下から上へ（法線がコース中心 ＝ 左を向く）
+  push(outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
+  push(outer, -GRASS_DROP + WALL_HEIGHT, BAND.wallTop, TILE.wall);
 
   // 連続して面を張る範囲。境目（同じ位置で u が飛ぶ点）は跨がない
-  const road = 4;
+  const road = 6;
+  const last = road + roadSpans;
   const strips = [
-    [0, 1],
-    [2, 3],
-    [road, road + roadSpans],
-    [road + roadSpans + 1, road + roadSpans + 2],
-    [road + roadSpans + 3, road + roadSpans + 4],
+    [0, 1], // 左の壁
+    [2, 3], // 左の草地
+    [4, 5], // 左の縁石
+    [road, last], // 路面
+    [last + 1, last + 2], // 右の縁石
+    [last + 3, last + 4], // 右の草地
+    [last + 5, last + 6], // 右の壁
   ];
   return { points, strips };
 }
@@ -189,7 +213,7 @@ function buildSurfaceTexture(size) {
 
   // ── 縁石: 赤白の縞。1 タイル（4 m）に 4 本
   const curbFrom = band(0.5);
-  const curbTo = band(0.75);
+  const curbTo = band(0.7);
   for (let y = 0; y < size; y++) {
     const red = Math.floor((y / size) * 8) % 2 === 0;
     const color = red ? [196, 48, 40] : [232, 232, 224];
@@ -197,11 +221,30 @@ function buildSurfaceTexture(size) {
   }
 
   // ── 草地: 濃い緑に粒
-  const grassFrom = band(0.75);
+  const grassFrom = band(0.7);
+  const grassTo = band(0.88);
   for (let y = 0; y < size; y++) {
-    for (let x = grassFrom; x < size; x++) {
+    for (let x = grassFrom; x < grassTo; x++) {
       const grain = ((x * 37 + y * 89) % 13) - 6;
       raster.blend(x, y, [40 + grain, 92 + grain * 2, 44 + grain], 1);
+    }
+  }
+
+  // ── 壁（8-6）: コンクリートの面に、上端の赤白のライン。
+  // u が縦方向（下端 → 上端）なので、u の大きいほうが壁の上になる
+  const wallFrom = band(0.88);
+  for (let y = 0; y < size; y++) {
+    for (let x = wallFrom; x < size; x++) {
+      const height = (x - wallFrom) / (size - wallFrom);
+      const grain = ((x * 53 + y * 101) % 9) - 4;
+      // 上端の 22 % は 4 m ごとの赤白のライン。壁の縁と距離感がここで読める
+      const stripe = height > 0.78 && Math.floor((y / size) * 4) % 2 === 0;
+      const color = stripe
+        ? [188, 56, 48]
+        : height > 0.78
+          ? [224, 224, 216]
+          : [132 + grain, 134 + grain, 130 + grain];
+      raster.blend(x, y, color, 1);
     }
   }
 

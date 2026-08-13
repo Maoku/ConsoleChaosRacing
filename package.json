@@ -19,12 +19,13 @@
     "build:backdrop": "tsx tools/build-backdrop.mjs",
     "build:sprites": "tsx tools/build-car-sprites.mjs",
     "build:scenery": "tsx tools/build-scenery-sprites.mjs",
+    "build:scenery-mesh": "tsx tools/build-scenery-mesh.mjs",
     "build:skyline": "tsx tools/build-skyline.mjs",
     "build:font": "tsx tools/build-font-atlas.mjs",
     "build:logo": "tsx tools/build-title-logo.mjs",
     "build:gauge": "tsx tools/build-gauge.mjs",
     "build:cockpit": "tsx tools/build-cockpit.mjs",
-    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:backdrop && npm run build:sprites && npm run build:scenery && npm run build:skyline && npm run build:font && npm run build:logo && npm run build:gauge && npm run build:cockpit"
+    "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:road && npm run build:backdrop && npm run build:sprites && npm run build:scenery && npm run build:scenery-mesh && npm run build:skyline && npm run build:font && npm run build:logo && npm run build:gauge && npm run build:cockpit"
   },
   "dependencies": {
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"

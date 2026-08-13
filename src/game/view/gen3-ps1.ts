@@ -10,6 +10,8 @@ import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js'
 import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
+import { sceneryFor } from './shared/scenery.js';
+import { sceneryBillboardAtlasFor, sceneryBillboards } from './shared/scenery-sprite.js';
 import {
   trackMeshLodFor,
   trackSectorAsset,
@@ -134,6 +136,23 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
       groundY,
       generations: [generation],
     } satisfies MeshCommand);
+  }
+
+  // ── 木（8-6）。**車と同じスロット 9 へ入れる。**
+  // スロットの中身はレンダラーが view depth で安定ソートするので（実測）、
+  // 木と車の前後は自動的に遠い順になる。壁はコースメッシュへ焼き込んである
+  const billboards = sceneryBillboardAtlasFor(generation);
+  if (billboards) {
+    for (const sprite of sceneryBillboards({
+      generation,
+      track,
+      objects: sceneryFor(track),
+      atlas: billboards,
+      camera,
+      orderTableIndex: CAR_SLOT,
+    })) {
+      frame.sprites.push(sprite);
+    }
   }
 
   // ── ミニマップは右下へ縮小配置する（フェーズ 1 の全画面表示から差し替え）

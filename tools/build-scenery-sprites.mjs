@@ -24,11 +24,15 @@ import { fileURLToPath } from 'node:url';
 
 import { GENERATION_IDS } from '@console-chaos/engine';
 
-import { SCENERY_SPRITES, SCENERY_SPRITE_GEOMETRY } from '../src/game/view/shared/scenery-sprite.ts';
+import {
+  SCENERY_BILLBOARDS,
+  SCENERY_SPRITES,
+  SCENERY_SPRITE_GEOMETRY,
+} from '../src/game/view/shared/scenery-sprite.ts';
 import { Raster, encodePng } from './lib/png.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const { cell, columns, rows, cells } = SCENERY_SPRITE_GEOMETRY;
+const { columns, rows, cells } = SCENERY_SPRITE_GEOMETRY;
 
 /**
  * 世代ごとの色。
@@ -59,16 +63,34 @@ const PALETTES = {
     tyreDark: [24, 24, 32],
     tyreBand: [240, 240, 240],
   },
+  // 3D の 2 世代は truecolor。色数の制約が無いので階調を少しだけ増やす
+  PS1: {
+    signFace: [236, 236, 228],
+    signInk: [186, 46, 40],
+    signPost: [116, 118, 112],
+    trunk: [82, 54, 34],
+    leafLight: [86, 148, 66],
+    leafDark: [34, 84, 40],
+    tyre: [58, 58, 64],
+    tyreDark: [22, 22, 28],
+    tyreBand: [236, 236, 236],
+  },
+  PS2: {
+    signFace: [242, 242, 236],
+    signInk: [198, 52, 44],
+    signPost: [126, 130, 126],
+    trunk: [94, 62, 38],
+    leafLight: [98, 162, 76],
+    leafDark: [38, 92, 46],
+    tyre: [62, 62, 70],
+    tyreDark: [24, 24, 30],
+    tyreBand: [242, 242, 242],
+  },
 };
 
-/** セル 1 つぶんのラスタ。描くのは「画面で見えるとおり」の向き */
-function cellRaster() {
-  return new Raster(cell, cell);
-}
-
 /** 看板 — 支柱の上に矩形の板。板の中に警告の帯を 1 本 */
-function drawSign(palette) {
-  const raster = cellRaster();
+function drawSign(palette, cell) {
+  const raster = new Raster(cell, cell);
   const postWidth = Math.round(cell * 0.1);
   const boardBottom = Math.round(cell * 0.62);
 
@@ -97,8 +119,8 @@ function drawSign(palette) {
 }
 
 /** 木 — 幹と、2 色の葉の塊 */
-function drawTree(palette) {
-  const raster = cellRaster();
+function drawTree(palette, cell) {
+  const raster = new Raster(cell, cell);
   const trunkWidth = Math.round(cell * 0.12);
   const trunkTop = Math.round(cell * 0.62);
   const crownCenterY = Math.round(cell * 0.34);
@@ -123,8 +145,8 @@ function drawTree(palette) {
 }
 
 /** タイヤフェンス — 横に並べた 3 段のタイヤ。白い帯を 1 本入れて縁を読ませる */
-function drawTyres(palette) {
-  const raster = cellRaster();
+function drawTyres(palette, cell) {
+  const raster = new Raster(cell, cell);
   const columnsOfTyres = 6;
   const rowsOfTyres = 3;
   const tyreWidth = cell / columnsOfTyres;
@@ -156,7 +178,7 @@ function drawTyres(palette) {
 }
 
 /** セルのラスタをアトラスへ貼る。**セルの中だけを上下反転する** */
-function blitFlipped(atlas, source, column) {
+function blitFlipped(atlas, source, column, cell) {
   for (let y = 0; y < cell; y++) {
     for (let x = 0; x < cell; x++) {
       const from = ((cell - 1 - y) * cell + x) * 4;
@@ -169,15 +191,18 @@ function blitFlipped(atlas, source, column) {
 }
 
 for (const generation of GENERATION_IDS) {
-  const layout = SCENERY_SPRITES[generation];
+  // 擬似3D 世代はスクリーン空間スプライト、3D 世代はワールド空間のビルボード。
+  // 使い方は違うが**焼く絵は同じ 1 つの生成器**から出る（8-6）
+  const layout = SCENERY_SPRITES[generation] ?? SCENERY_BILLBOARDS[generation];
   if (!layout) continue;
   const palette = PALETTES[generation];
   if (!palette) throw new Error(`${generation} の色が定義されていない`);
 
+  const cell = layout.cellSize;
   const atlas = new Raster(cell * columns, cell * rows);
-  blitFlipped(atlas, drawSign(palette), cells.sign);
-  blitFlipped(atlas, drawTree(palette), cells.tree);
-  blitFlipped(atlas, drawTyres(palette), cells.tyres);
+  blitFlipped(atlas, drawSign(palette, cell), cells.sign, cell);
+  blitFlipped(atlas, drawTree(palette, cell), cells.tree, cell);
+  blitFlipped(atlas, drawTyres(palette, cell), cells.tyres, cell);
 
   const png = encodePng(atlas.width, atlas.height, atlas.pixels);
   const relativePath = `public/${layout.url}`;

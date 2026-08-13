@@ -21,7 +21,9 @@ import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
+import { TYRE_WALL, TYRE_WALLS } from '../game/view/shared/scenery-mesh.js';
 import {
+  SCENERY_BILLBOARDS,
   SCENERY_SPRITES,
   SCENERY_SPRITE_GEOMETRY,
 } from '../game/view/shared/scenery-sprite.js';
@@ -79,9 +81,12 @@ const backdropTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generatio
   return layout ? [{ url: layout.texture, wrap: 'repeat' as const }] : [];
 });
 
-/** 背景オブジェクトのアトラス（生成物 / tools/build-scenery-sprites.mjs・8-6） */
+/**
+ * 背景オブジェクトのアトラス（生成物 / tools/build-scenery-sprites.mjs・8-6）。
+ * 擬似3D 世代はスクリーン空間、3D 世代はワールド空間のビルボードとして引く
+ */
 const sceneryAtlases = GENERATION_IDS.flatMap((generation) => {
-  const layout = SCENERY_SPRITES[generation];
+  const layout = SCENERY_SPRITES[generation] ?? SCENERY_BILLBOARDS[generation];
   return layout
     ? [
         {
@@ -92,6 +97,13 @@ const sceneryAtlases = GENERATION_IDS.flatMap((generation) => {
       ]
     : [];
 });
+
+/** タイヤフェンス（生成物 / tools/build-scenery-mesh.mjs・8-6）。第4世代だけが置く */
+const tyreWallModels: RenderModelAsset[] = GENERATION_IDS.some(
+  (generation) => TYRE_WALLS[generation] !== null,
+)
+  ? [{ url: TYRE_WALL.asset }]
+  : [];
 
 /** タコメーターのアトラス（生成物 / tools/build-gauge.mjs）。FC / SFC は持たない */
 const tachometerAtlases = GENERATION_IDS.flatMap((generation) => {
@@ -182,6 +194,8 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen3/models/car.glb', polygonSort: true },
     { url: 'assets/gen4/models/car.glb' },
     ...trackModels,
+    // 生成物（tools/build-scenery-mesh.mjs・8-6）。置くのは第4世代だけ
+    ...tyreWallModels,
   ],
   geometries: [
     { kind: 'box', halfExtents: [0.5, 0.5, 0.5] },

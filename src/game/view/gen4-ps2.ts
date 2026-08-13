@@ -16,6 +16,9 @@ import { cockpitSprites } from './shared/cockpit.js';
 import { ENVIRONMENT_MAP, SKYLINE, SUN_DIRECTION, equirectU } from './shared/environment.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
+import { sceneryFor } from './shared/scenery.js';
+import { tyreWallDrawDistance, tyreWallMeshes } from './shared/scenery-mesh.js';
+import { sceneryBillboardAtlasFor, sceneryBillboards } from './shared/scenery-sprite.js';
 import {
   trackMeshLodFor,
   trackSectorAsset,
@@ -234,6 +237,40 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
       groundY: ground[1],
       generations: [generation],
     } satisfies MeshCommand);
+  }
+
+  // ── 背景オブジェクト（8-6）。壁はコースメッシュへ焼き込んであるので、
+  // ここで積むのは木（ビルボード）とタイヤフェンス（専用メッシュ）だけ。
+  // **描画順の指定は 1 つも書かない** — 深度バッファがあるのだから要らない。
+  // それがそのまま第3世代との差になる（§3.4）
+  const objects = sceneryFor(track);
+  const tyreDistance = tyreWallDrawDistance(generation);
+  if (tyreDistance !== null) {
+    for (const mesh of tyreWallMeshes({
+      generation,
+      track,
+      objects,
+      material: trackMaterial.id,
+      camera: camera.position,
+      drawDistance: tyreDistance,
+    })) {
+      frame.meshes.push(mesh);
+    }
+  }
+
+  const billboards = sceneryBillboardAtlasFor(generation);
+  if (billboards) {
+    for (const sprite of sceneryBillboards({
+      generation,
+      track,
+      objects,
+      atlas: billboards,
+      camera: camera.position,
+      // 深度バッファに任せる。不透明扱い（`alphaCutoff` で抜く）で積む
+      depthWrite: true,
+    })) {
+      frame.sprites.push(sprite);
+    }
   }
 
   // ── 内装（8-5）。カメラは `windshield` と同じで、被せる 1 枚だけが違う。

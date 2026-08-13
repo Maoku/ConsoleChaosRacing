@@ -8,7 +8,11 @@ import {
   sceneryOfKinds,
   type SceneryKind,
 } from '../src/game/view/shared/scenery.js';
-import { scenerySpriteAtlasFor } from '../src/game/view/shared/scenery-sprite.js';
+import { tyreWallDrawDistance } from '../src/game/view/shared/scenery-mesh.js';
+import {
+  sceneryBillboardAtlasFor,
+  scenerySpriteAtlasFor,
+} from '../src/game/view/shared/scenery-sprite.js';
 import { PLAYER_ENTRANT } from '../src/game/view/shared/variants.js';
 import { buildFrame, raceAfter } from './support/frame.js';
 
@@ -76,9 +80,65 @@ describe('背景オブジェクト', () => {
   it('FC は看板 1 種だけ（8 スプライト/走査線）、SFC は 3 種', () => {
     expect(scenerySpriteAtlasFor('FC')!.kinds).toEqual(['sign']);
     expect(scenerySpriteAtlasFor('SFC')!.kinds).toEqual(['sign', 'tree', 'tyres']);
-    // 3D の 2 世代はメッシュとビルボードで置くので、スプライトのアトラスを持たない
+    // 3D の 2 世代はメッシュとビルボードで置くので、スクリーン空間の表を持たない
     expect(scenerySpriteAtlasFor('PS1')).toBeNull();
     expect(scenerySpriteAtlasFor('PS2')).toBeNull();
+  });
+
+  it('3D 世代はビルボードが木だけ、タイヤフェンスは第4世代のメッシュ', () => {
+    for (const generation of ['PS1', 'PS2'] as const) {
+      expect(sceneryBillboardAtlasFor(generation)!.kinds).toEqual(['tree']);
+    }
+    expect(sceneryBillboardAtlasFor('FC')).toBeNull();
+    expect(sceneryBillboardAtlasFor('SFC')).toBeNull();
+    // 第3世代にタイヤフェンスは置かない（スロットとドローコールを増やさない）
+    expect(tyreWallDrawDistance('PS1')).toBeNull();
+    expect(tyreWallDrawDistance('PS2')).toBeGreaterThan(0);
+  });
+
+  describe('3D 世代', () => {
+    const state = raceAfter(900);
+
+    it('PS1: 木は車と同じスロット 9 に入る（深度バッファが無いため）', () => {
+      const frame = buildFrame('PS1', state);
+      const trees = frame.sprites.filter((sprite) => sprite.id.startsWith('scenery-PS1-'));
+      expect(trees.length).toBeGreaterThan(0);
+      for (const tree of trees) {
+        expect(tree.orderTableIndex).toBe(9);
+        expect(tree.billboard).toBe('cylindrical');
+        expect(tree.screenSpace).toBeUndefined();
+      }
+      // 第3世代にタイヤフェンスのメッシュは無い
+      expect(frame.meshes.filter((mesh) => mesh.id.startsWith('tyre-wall-'))).toEqual([]);
+    });
+
+    it('PS2: 描画順の指定を 1 つも持たない（深度バッファがある）', () => {
+      const frame = buildFrame('PS2', state);
+      const trees = frame.sprites.filter((sprite) => sprite.id.startsWith('scenery-PS2-'));
+      expect(trees.length).toBeGreaterThan(0);
+      for (const tree of trees) {
+        expect(tree.orderTableIndex).toBeUndefined();
+        expect(tree.depthWrite).toBe(true);
+        expect(tree.billboard).toBe('cylindrical');
+      }
+      const tyres = frame.meshes.filter((mesh) => mesh.id.startsWith('tyre-wall-PS2-'));
+      expect(tyres.length).toBeGreaterThan(0);
+      for (const mesh of tyres) {
+        expect(mesh.orderTableIndex).toBeUndefined();
+        expect(mesh.polygonSortRange).toBeUndefined();
+        // 路面と同じアトラスの帯を引くので、マテリアルは増えない
+        expect(mesh.material).toBe('track-PS2');
+      }
+    });
+
+    it('壁はコースメッシュへ焼き込んであり、別メッシュとしては積まれない', () => {
+      // `TransformCommand` に X/Z 回転が無い以上、バンクのついた路面に沿う壁は
+      // 別メッシュでは置けない（§1.3）。焼き込みは `track-mesh.spec.ts` が検査する
+      for (const generation of ['PS1', 'PS2'] as const) {
+        const frame = buildFrame(generation, state);
+        expect(frame.meshes.filter((mesh) => mesh.id.includes('wall-mesh'))).toEqual([]);
+      }
+    });
   });
 
   describe('擬似3D世代のスプライト', () => {

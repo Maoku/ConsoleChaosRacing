@@ -44,10 +44,23 @@ function loadSector(lod: TrackMeshLod, sector: number): GltfPrimitive {
   return model.meshes[0]!.primitives[0]!;
 }
 
-/** 断面 1 輪ぶんの頂点数。草地 2 ＋ 縁石 2 ＋ 路面 (spans+1) ＋ 縁石 2 ＋ 草地 2 */
+/**
+ * 断面 1 輪ぶんの頂点数。
+ * 壁 2 ＋ 草地 2 ＋ 縁石 2 ＋ 路面 (spans+1) ＋ 縁石 2 ＋ 草地 2 ＋ 壁 2。
+ * 壁は 8-6 で足したもので、`TransformCommand` に X/Z 回転が無い以上、
+ * バンクのついた路面に沿う壁はメッシュへ焼き込むしかない。
+ */
 function ringWidth(lod: TrackMeshLod): number {
-  return 4 + (lod.roadSpans + 1) + 4;
+  return 6 + (lod.roadSpans + 1) + 6;
 }
+
+/** 1 区間あたりの四角形。壁・草地・縁石・路面 spans・縁石・草地・壁 */
+function quadsPerSegment(lod: TrackMeshLod): number {
+  return 6 + lod.roadSpans;
+}
+
+/** 路面の最初の点の列番号（壁 2 ＋ 草地 2 ＋ 縁石 2 のあと） */
+const ROAD_START = 6;
 
 describe('コースメッシュ', () => {
   for (const generation of MESH_GENERATIONS) {
@@ -89,9 +102,9 @@ describe('コースメッシュ', () => {
         for (let sector = 0; sector < LOD.sectorCount; sector++) {
           const primitive = loadSector(LOD, sector);
           expect(primitive.positions.length / 3).toBe((LOD.segmentsPerSector + 1) * RING_WIDTH);
-          // 1 区間あたり 8 つの四角形（草地・縁石・路面 spans・縁石・草地）
-          const quadsPerSegment = 1 + 1 + LOD.roadSpans + 1 + 1;
-          expect(primitive.indices.length / 3).toBe(LOD.segmentsPerSector * quadsPerSegment * 2);
+          expect(primitive.indices.length / 3).toBe(
+            LOD.segmentsPerSector * quadsPerSegment(LOD) * 2,
+          );
           expect(primitive.uvs).not.toBeNull();
           expect(primitive.normals).not.toBeNull();
         }
@@ -99,18 +112,32 @@ describe('コースメッシュ', () => {
 
       it('同時に描くセクターが三角形予算に収まる', () => {
         // §6.3 の 20,000 tri/frame。路面だけで使い切らないこと
-        const quadsPerSegment = 1 + 1 + LOD.roadSpans + 1 + 1;
-        const perSector = LOD.segmentsPerSector * quadsPerSegment * 2;
+        const perSector = LOD.segmentsPerSector * quadsPerSegment(LOD) * 2;
         const drawn = Math.min(LOD.sectorCount, LOD.visibleRadius * 2 + 1);
         expect(perSector * drawn).toBeLessThan(20_000);
       });
 
-      it('面がすべて上を向いている（裏面カリングに落ちない）', () => {
+      it('地面は上を向き、壁はコース中心を向いている（裏面カリングに落ちない）', () => {
         for (let sector = 0; sector < LOD.sectorCount; sector++) {
           const primitive = loadSector(LOD, sector);
           const normals = primitive.normals!;
-          for (let index = 0; index < normals.length; index += 3) {
-            expect(normals[index + 1]).toBeGreaterThan(0);
+          const positions = primitive.positions;
+          for (let vertex = 0; vertex < normals.length / 3; vertex++) {
+            const column = vertex % RING_WIDTH;
+            const ny = normals[vertex * 3 + 1]!;
+            // 壁は列の両端 2 つずつ。垂直な面なので上は向かない
+            if (column < 2 || column >= RING_WIDTH - 2) {
+              expect(Math.abs(ny)).toBeLessThan(0.3);
+              // 法線がコース中心のほうを向いていること（外を向くと壁の裏側が見える）
+              const ring = Math.floor(vertex / RING_WIDTH);
+              const centerColumn = ring * RING_WIDTH + ROAD_START + LOD.roadSpans / 2;
+              const toCenterX = positions[centerColumn * 3]! - positions[vertex * 3]!;
+              const toCenterZ = positions[centerColumn * 3 + 2]! - positions[vertex * 3 + 2]!;
+              const dot = normals[vertex * 3]! * toCenterX + normals[vertex * 3 + 2]! * toCenterZ;
+              expect(dot).toBeGreaterThan(0);
+              continue;
+            }
+            expect(ny).toBeGreaterThan(0);
           }
         }
       });
@@ -140,9 +167,9 @@ describe('コースメッシュ', () => {
             maxY = Math.max(maxY, positions[index]!);
           }
         }
-        // 草地が路面より 0.45 m 下がるぶんを含む
+        // 草地が路面より 0.45 m 下がるぶんと、壁の高さ 1.0 m（8-6）を含む
         expect(maxY - minY).toBeGreaterThan(7.5);
-        expect(maxY - minY).toBeLessThan(9.5);
+        expect(maxY - minY).toBeLessThan(10.5);
       });
 
       it('高速コーナーにバンクが焼き込まれている', () => {
@@ -167,24 +194,24 @@ describe('コースメッシュ', () => {
         const [from] = sectorRange(LOD, sector, TRACK.length);
         const step = TRACK.length / (LOD.sectorCount * LOD.segmentsPerSector);
         const ring = Math.round((banked.s - from) / step);
-        const roadStart = 4;
-        const meshLeft = positions[(ring * RING_WIDTH + roadStart) * 3 + 1]!;
-        const meshRight = positions[(ring * RING_WIDTH + roadStart + LOD.roadSpans) * 3 + 1]!;
+        const meshLeft = positions[(ring * RING_WIDTH + ROAD_START) * 3 + 1]!;
+        const meshRight = positions[(ring * RING_WIDTH + ROAD_START + LOD.roadSpans) * 3 + 1]!;
         expect(meshLeft - meshRight).toBeCloseTo(left[1] - right[1], 3);
       });
 
-      it('UV が路面・縁石・草地の帯に収まっている', () => {
+      it('UV が路面・縁石・草地・壁の帯に収まっている', () => {
         const primitive = loadSector(LOD, 0);
         const uvs = primitive.uvs!;
-        const roadStart = 4;
         for (let ring = 0; ring <= LOD.segmentsPerSector; ring++) {
           for (let column = 0; column < RING_WIDTH; column++) {
             const u = uvs[(ring * RING_WIDTH + column) * 2]!;
             expect(u).toBeGreaterThan(0);
             expect(u).toBeLessThan(1);
-            if (column >= roadStart && column <= roadStart + LOD.roadSpans) {
+            if (column >= ROAD_START && column <= ROAD_START + LOD.roadSpans) {
               expect(u).toBeLessThan(0.5); // 路面の帯
             }
+            // 壁は列の両端 2 つずつ。アトラスのいちばん外の帯を引く（8-6）
+            if (column < 2 || column >= RING_WIDTH - 2) expect(u).toBeGreaterThan(0.88);
           }
         }
       });
@@ -193,9 +220,8 @@ describe('コースメッシュ', () => {
         // 1 マスが大きすぎると、揺れが「面の波打ち」ではなく「物体の平行移動」に見える
         const primitive = loadSector(LOD, 0);
         const positions = primitive.positions;
-        const roadStart = 4;
-        const a = roadStart * 3;
-        const b = (roadStart + 1) * 3;
+        const a = ROAD_START * 3;
+        const b = (ROAD_START + 1) * 3;
         const lateralStep = Math.hypot(
           positions[a]! - positions[b]!,
           positions[a + 2]! - positions[b + 2]!,
