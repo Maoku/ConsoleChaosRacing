@@ -1,5 +1,12 @@
+import {
+  GENERATION_IDS,
+  HARDWARE_GENERATION_PROFILES,
+  createDeviceSnapshot,
+  createGenerationController,
+} from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
 
+import { createRacingActionMap, requestedGeneration } from '../src/game/input/bindings.js';
 import {
   RESULT_DELAY_TICKS,
   acceptsDriving,
@@ -187,6 +194,43 @@ describe('画面の状態機械', () => {
       runUntil(flow, 'result', RESULT_DELAY_TICKS + 5);
       stepFlow(flow, press('confirm'));
       expect(flow.race.seed).not.toBe(first);
+    });
+  });
+
+  /**
+   * 世代の直接指定（実装計画 8-7）。
+   *
+   * `1`〜`4` キーが HUD の `CH n : NTH GEN`（8-8）とそのまま対応することが要点で、
+   * **表示と操作で同じ番号が使われている**ことがチャンネルの見立てを成立させる。
+   */
+  describe('世代の直接指定', () => {
+    /** キーを離した状態 → 押した状態、と 2 回サンプルして `pressed` を作る */
+    function pressKey(key: string) {
+      const actions = createRacingActionMap();
+      const profile = HARDWARE_GENERATION_PROFILES.FC;
+      actions.sample(createDeviceSnapshot([]), profile, 16);
+      return actions.sample(createDeviceSnapshot([key]), profile, 16);
+    }
+
+    it('4 つのキーがそれぞれ対応する世代を要求する', () => {
+      GENERATION_IDS.forEach((generation, index) => {
+        for (const key of [`Digit${index + 1}`, `Numpad${index + 1}`]) {
+          expect(requestedGeneration(pressKey(key)), key).toBe(generation);
+        }
+      });
+    });
+
+    it('押していなければ何も要求しない', () => {
+      expect(requestedGeneration(pressKey('KeyZ'))).toBeNull();
+    });
+
+    it('表示中の世代を要求しても切替は起きない', () => {
+      const controller = createGenerationController('PS1');
+      expect(controller.request(requestedGeneration(pressKey('Digit3'))!)).toBe(false);
+      expect(controller.transition.active).toBe(false);
+      // 別のチャンネルなら切り替わる。順送り（Q / E）と同じ経路を通る
+      expect(controller.request(requestedGeneration(pressKey('Digit1'))!)).toBe(true);
+      expect(controller.transition.to).toBe('FC');
     });
   });
 

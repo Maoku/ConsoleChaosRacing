@@ -63,8 +63,14 @@ const BLINK_HZ = 1.6;
 /** ミニマップの上端との間に空ける隙間 [px]（拡大前） */
 const MINIMAP_GAP = 4;
 
-/** 操作説明。ミニマップの左端に収まる長さに切ってある */
-const CONTROLS = ['Z ACCEL  X BRAKE', 'Q E: GENERATION'] as const;
+/**
+ * 操作説明。ミニマップの左端に収まる長さに切ってある。
+ *
+ * 2 行目に `1-4` を並べてあるのは 8-7 で足した世代の直接指定で、
+ * HUD の `CH n : NTH GEN` と番号が対応する — **チャンネルを回す**という
+ * 見立てが、操作説明・HUD・キーの 3 か所で揃う。
+ */
+const CONTROLS = ['Z ACCEL  X BRAKE', 'Q E 1-4: CHANNEL'] as const;
 
 export function titleSprites(context: ViewContext): SpriteCommand[] {
   const { generation, profile, display } = context;

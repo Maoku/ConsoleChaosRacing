@@ -10,7 +10,7 @@ import { createEngineVoiceScheduler } from './audio/engine-sound.js';
 import { arrangementFor } from './audio/score.js';
 import { createRaceSfx } from './audio/sfx.js';
 import { acceptsDriving, createFlow, stepFlow } from './flow/screens.js';
-import { createRacingActionMap } from './input/bindings.js';
+import { createRacingActionMap, requestedGeneration } from './input/bindings.js';
 import { VEHICLE, type VehicleControl } from './sim/vehicle.js';
 import { buildGenerationView } from './view/index.js';
 import { createDisplayLatch } from './view/shared/display-state.js';
@@ -57,9 +57,14 @@ export const racingModule: GameModule = {
           context.generation.profile,
           FIXED_DT_SECONDS * 1000,
         );
-        // 世代切替はどの画面でも効く。状態機械は世代を知らない（§6.1 世代横断 4）
+        // 世代切替はどの画面でも効く。状態機械は世代を知らない（§6.1 世代横断 4）。
+        // 順送り（Q / E）と、チャンネルを選ぶように跳ぶ直接指定（1〜4）の 2 通り。
+        // どちらも同じ経路を通るので、切替演出も BGM の位相保存も追加のコストが無い
         if (input.genNext.pressed) context.generation.cycle(1);
         if (input.genPrev.pressed) context.generation.cycle(-1);
+        const requested = requestedGeneration(input);
+        // 表示中の世代を要求しても `request()` が偽を返すだけで演出は起きない
+        if (requested) context.generation.request(requested);
 
         const control: VehicleControl = {
           steer: input.steer,
