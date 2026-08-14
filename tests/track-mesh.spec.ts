@@ -12,13 +12,18 @@ import { describe, expect, it } from 'vitest';
 
 import { TRACK } from '../src/game/sim/track.js';
 import {
+  TRACK_ATLAS,
+  TRACK_ATLAS_SLOTS,
   TRACK_MESH_LODS,
+  roadColumns,
   sectorAt,
   sectorRange,
   trackSectorAsset,
+  trackSurfaceTexture,
   visibleSectors,
   type TrackMeshLod,
 } from '../src/game/view/shared/track-mesh.js';
+import { decodePng } from '../tools/lib/png.mjs';
 
 /**
  * 生成したコースメッシュが、コース定義どおりの起伏とバンクを持っているかを検査する
@@ -46,22 +51,47 @@ function loadSector(lod: TrackMeshLod, sector: number): GltfPrimitive {
 
 /**
  * 断面 1 輪ぶんの頂点数。
- * 土手 2 ＋ 壁 2 ＋ 草地 2 ＋ 縁石 2 ＋ 路面 (spans+1) ＋ 縁石 2 ＋ 草地 2 ＋ 壁 2 ＋ 土手 2。
+ * 土手 2 ＋［金網 2］＋ 壁 2 ＋ 草地 2 ＋ 縁石 2 ＋ 路面の列 ＋ その鏡像。
  * 壁と土手は 8-6 で足したもので、`TransformCommand` に X/Z 回転が無い以上、
  * バンクのついた路面に沿う壁はメッシュへ焼き込むしかない。土手は**木を植える地面**で、
  * 無いと壁の外に置いた木が空の中に浮く。
+ * 金網は 8-10 で足した**第4世代だけ**の面で、`fenceHeight` を持つ LOD にしか無い。
  */
+function sideColumns(lod: TrackMeshLod): number {
+  return lod.fenceHeight === null ? 8 : 10;
+}
+
+/** 路面の列数。等分 (`roadSpans` + 1) ＋ 中央の破線の両縁（8-11） */
+function roadColumnCount(lod: TrackMeshLod): number {
+  return roadColumns(lod).length;
+}
+
 function ringWidth(lod: TrackMeshLod): number {
-  return 8 + (lod.roadSpans + 1) + 8;
+  return sideColumns(lod) * 2 + roadColumnCount(lod);
 }
 
-/** 1 区間あたりの四角形。土手・壁・草地・縁石・路面 spans・縁石・草地・壁・土手 */
+/** 1 区間あたりの四角形。片側の面の数 × 2 ＋ 路面の分割数 */
 function quadsPerSegment(lod: TrackMeshLod): number {
-  return 8 + lod.roadSpans;
+  return sideColumns(lod) + roadColumnCount(lod) - 1;
 }
 
-/** 路面の最初の点の列番号（土手 2 ＋ 壁 2 ＋ 草地 2 ＋ 縁石 2 のあと） */
-const ROAD_START = 8;
+/** 路面の最初の点の列番号 */
+function roadStart(lod: TrackMeshLod): number {
+  return sideColumns(lod);
+}
+
+/**
+ * その列が垂直な面（壁・金網）か。
+ * 列の並びは 土手・［金網］・壁・草地・縁石・路面 … の鏡像。
+ */
+function isVertical(lod: TrackMeshLod, column: number): boolean {
+  const width = ringWidth(lod);
+  const from = 2;
+  const to = lod.fenceHeight === null ? 4 : 6;
+  return (
+    (column >= from && column < to) || (column >= width - to && column < width - from)
+  );
+}
 
 describe('コースメッシュ', () => {
   for (const generation of MESH_GENERATIONS) {
@@ -112,13 +142,19 @@ describe('コースメッシュ', () => {
       });
 
       it('同時に描くセクターが三角形予算に収まる', () => {
-        // §6.3 の 20,000 tri/frame。路面だけで使い切らないこと
         const perSector = LOD.segmentsPerSector * quadsPerSegment(LOD) * 2;
         const drawn = Math.min(LOD.sectorCount, LOD.visibleRadius * 2 + 1);
-        expect(perSector * drawn).toBeLessThan(20_000);
+        const road = perSector * drawn;
+        // §6.3 の 20,000 tri/frame は **ordering table の CPU 側分割性能**から出た値で、
+        // 深度バッファがあってソートを一切しない世代には掛からない（§6.3 に実測の記録）。
+        // 掛かる世代では「路面だけで使い切らないこと」がそのまま LOD の制約になる
+        const budget = HARDWARE_GENERATION_PROFILES[generation].video.depthBuffer
+          ? 40_000
+          : 20_000;
+        expect(road).toBeLessThan(budget);
       });
 
-      it('地面は上を向き、壁はコース中心を向いている（裏面カリングに落ちない）', () => {
+      it('地面は上を向き、壁と金網はコース中心を向いている（裏面カリングに落ちない）', () => {
         for (let sector = 0; sector < LOD.sectorCount; sector++) {
           const primitive = loadSector(LOD, sector);
           const normals = primitive.normals!;
@@ -126,13 +162,13 @@ describe('コースメッシュ', () => {
           for (let vertex = 0; vertex < normals.length / 3; vertex++) {
             const column = vertex % RING_WIDTH;
             const ny = normals[vertex * 3 + 1]!;
-            // 壁は列の端から 3・4 番目。垂直な面なので上は向かない
-            const isWall = (column >= 2 && column < 4) || (column >= RING_WIDTH - 4 && column < RING_WIDTH - 2);
-            if (isWall) {
+            if (isVertical(LOD, column)) {
+              // 垂直な面なので上は向かない
               expect(Math.abs(ny)).toBeLessThan(0.3);
               // 法線がコース中心のほうを向いていること（外を向くと壁の裏側が見える）
               const ring = Math.floor(vertex / RING_WIDTH);
-              const centerColumn = ring * RING_WIDTH + ROAD_START + LOD.roadSpans / 2;
+              const centerColumn =
+                ring * RING_WIDTH + roadStart(LOD) + Math.floor(roadColumnCount(LOD) / 2);
               const toCenterX = positions[centerColumn * 3]! - positions[vertex * 3]!;
               const toCenterZ = positions[centerColumn * 3 + 2]! - positions[vertex * 3 + 2]!;
               const dot = normals[vertex * 3]! * toCenterX + normals[vertex * 3 + 2]! * toCenterZ;
@@ -169,9 +205,10 @@ describe('コースメッシュ', () => {
             maxY = Math.max(maxY, positions[index]!);
           }
         }
-        // 草地が路面より 0.45 m 下がるぶんと、壁 ＋ 土手の高さ 1.0 m（8-6）を含む
+        // 草地が路面より 0.45 m 下がるぶんと、壁 ＋ 土手の高さ 1.0 m（8-6）、
+        // 金網を載せる世代（第4世代）はさらにその高さ（8-10）を含む
         expect(maxY - minY).toBeGreaterThan(7.5);
-        expect(maxY - minY).toBeLessThan(10.5);
+        expect(maxY - minY).toBeLessThan(10.5 + (LOD.fenceHeight ?? 0));
       });
 
       it('高速コーナーにバンクが焼き込まれている', () => {
@@ -196,39 +233,122 @@ describe('コースメッシュ', () => {
         const [from] = sectorRange(LOD, sector, TRACK.length);
         const step = TRACK.length / (LOD.sectorCount * LOD.segmentsPerSector);
         const ring = Math.round((banked.s - from) / step);
-        const meshLeft = positions[(ring * RING_WIDTH + ROAD_START) * 3 + 1]!;
-        const meshRight = positions[(ring * RING_WIDTH + ROAD_START + LOD.roadSpans) * 3 + 1]!;
+        const meshLeft = positions[(ring * RING_WIDTH + roadStart(LOD)) * 3 + 1]!;
+        const meshRight =
+          positions[(ring * RING_WIDTH + roadStart(LOD) + roadColumnCount(LOD) - 1) * 3 + 1]!;
         expect(meshLeft - meshRight).toBeCloseTo(left[1] - right[1], 3);
       });
 
-      it('UV が路面・縁石・草地・壁の帯に収まっている', () => {
+      it('UV が路面・縁石・草地・壁・金網の帯に収まっている', () => {
+        // 帯の定義は `track-mesh.ts` の 1 か所にあり、生成ツールと共有している。
+        // ここで確かめるのは「どの列がどの帯を引くか」の対応のほう
         const primitive = loadSector(LOD, 0);
         const uvs = primitive.uvs!;
+        const inside = (u: number, slot: readonly [number, number]) =>
+          u > slot[0] && u < slot[1];
+
         for (let ring = 0; ring <= LOD.segmentsPerSector; ring++) {
           for (let column = 0; column < RING_WIDTH; column++) {
             const u = uvs[(ring * RING_WIDTH + column) * 2]!;
             expect(u).toBeGreaterThan(0);
             expect(u).toBeLessThan(1);
-            if (column >= ROAD_START && column <= ROAD_START + LOD.roadSpans) {
-              expect(u).toBeLessThan(0.5); // 路面の帯
+            if (column >= roadStart(LOD) && column < roadStart(LOD) + roadColumnCount(LOD)) {
+              expect(inside(u, TRACK_ATLAS_SLOTS.road), `列 ${column}`).toBe(true);
             }
-            // 壁はアトラスのいちばん外の帯、土手は草地の帯を引く（8-6）
-            const isWall = (column >= 2 && column < 4) || (column >= RING_WIDTH - 4 && column < RING_WIDTH - 2);
-            if (isWall) expect(u).toBeGreaterThan(0.88);
+            // 土手は草地の帯を引く（8-6）。木を植える地面なので草でよい
             if (column < 2 || column >= RING_WIDTH - 2) {
-              expect(u).toBeGreaterThan(0.7);
-              expect(u).toBeLessThan(0.88);
+              expect(inside(u, TRACK_ATLAS_SLOTS.grass), `列 ${column}`).toBe(true);
+            }
+            if (isVertical(LOD, column)) {
+              const wall = inside(u, TRACK_ATLAS_SLOTS.wall);
+              const fence = LOD.fenceHeight !== null && inside(u, TRACK_ATLAS_SLOTS.fence);
+              expect(wall || fence, `列 ${column} の u = ${u}`).toBe(true);
             }
           }
         }
+      });
+
+      it('金網は第4世代にだけ載り、壁の上端から立ち上がる', () => {
+        const primitive = loadSector(LOD, 0);
+        const uvs = primitive.uvs!;
+        const positions = primitive.positions;
+        const fenceColumns = [];
+        for (let column = 0; column < RING_WIDTH; column++) {
+          if (uvs[column * 2]! > TRACK_ATLAS_SLOTS.fence[0]) fenceColumns.push(column);
+        }
+        if (LOD.fenceHeight === null) {
+          expect(fenceColumns, '金網を載せない世代に金網の UV がある').toEqual([]);
+          return;
+        }
+        // 左右に 2 列ずつ（上端と下端）
+        expect(fenceColumns).toHaveLength(4);
+        // 下端は壁の上端と同じ高さ、上端はそこから `fenceHeight` だけ上
+        const [topLeft, bottomLeft] = fenceColumns;
+        const rise = positions[topLeft! * 3 + 1]! - positions[bottomLeft! * 3 + 1]!;
+        expect(rise).toBeCloseTo(LOD.fenceHeight, 6);
+      });
+
+      it('中央の破線の両縁が頂点の列に乗っている（アフィン歪みで線が折れない）', () => {
+        // 等分だけで割ると破線は四角形の境目（roadSpans が偶数なら t = 0.5）を跨ぎ、
+        // 左右の半分が別々の傾きで補間されて食い違う。帯の縁を頂点にしておけば、
+        // 線の横幅は頂点の投影そのものになり、u がどう歪んでも縁は折れない（8-11）
+        const uvs = loadSector(LOD, 0).uvs!;
+        const columns = Array.from({ length: RING_WIDTH }, (_, column) => uvs[column * 2]!);
+        const at = (u: number) => columns.some((value) => Math.abs(value - u) < 1e-6);
+
+        expect(at(TRACK_ATLAS.centerLine.from), '破線の左縁に列が無い').toBe(true);
+        expect(at(TRACK_ATLAS.centerLine.to), '破線の右縁に列が無い').toBe(true);
+        // 帯の内側に列は無い ＝ 幅 0 の四角形を作っていない
+        expect(
+          columns.filter(
+            (u) =>
+              u > TRACK_ATLAS.centerLine.from + 1e-6 && u < TRACK_ATLAS.centerLine.to - 1e-6,
+          ),
+        ).toEqual([]);
+        // 帯は路面の中に収まり、路面の中心に乗っている（幅の 1 % 以内）
+        const road = TRACK_ATLAS.road;
+        expect(TRACK_ATLAS.centerLine.from).toBeGreaterThan(road.from);
+        expect(TRACK_ATLAS.centerLine.to).toBeLessThan(road.to);
+        const middle = (TRACK_ATLAS.centerLine.from + TRACK_ATLAS.centerLine.to) / 2;
+        expect(Math.abs(middle - (road.from + road.to) / 2)).toBeLessThan(
+          (road.to - road.from) * 0.01,
+        );
+      });
+
+      it('破線の帯だけが白く塗られ、外側へ 1 texel も溢れていない', () => {
+        // メッシュの列とテクスチャの塗りが同じ帯から出ていることの確認。
+        // ずれていると、線の縁に沿ってアスファルトか白が 1 本残る
+        const image = decodePng(
+          readFileSync(join(process.cwd(), 'public', trackSurfaceTexture(LOD))),
+        );
+        const texel = (u: number) => Math.round(u * image.width);
+        const from = texel(TRACK_ATLAS.centerLine.from);
+        const to = texel(TRACK_ATLAS.centerLine.to);
+        // texel の境界にちょうど乗る帯であること（nearest の第3世代で滲まない条件）
+        expect(TRACK_ATLAS.centerLine.from * image.width).toBeCloseTo(from, 9);
+        expect(TRACK_ATLAS.centerLine.to * image.width).toBeCloseTo(to, 9);
+        expect(to - from).toBeGreaterThanOrEqual(3);
+
+        // 破線が引かれている行（タイルの前半）で調べる
+        const y = Math.floor(image.height / 4);
+        const red = (x: number) => image.pixels[(y * image.width + x) * 4]!;
+        for (let x = from; x < to; x++) {
+          expect(red(x), `帯の内側 ${x} が白くない`).toBeGreaterThan(180);
+        }
+        expect(red(from - 1), '帯の左外が白い').toBeLessThan(120);
+        expect(red(to), '帯の右外が白い').toBeLessThan(120);
+
+        // タイルの後半は破線が切れている ＝ 流れて見える
+        const gap = Math.floor((image.height * 3) / 4);
+        expect(image.pixels[(gap * image.width + from) * 4]!).toBeLessThan(120);
       });
 
       it('路面の横分割が頂点量子化の揺れを面の波打ちに見せる細かさである', () => {
         // 1 マスが大きすぎると、揺れが「面の波打ち」ではなく「物体の平行移動」に見える
         const primitive = loadSector(LOD, 0);
         const positions = primitive.positions;
-        const a = ROAD_START * 3;
-        const b = (ROAD_START + 1) * 3;
+        const a = roadStart(LOD) * 3;
+        const b = (roadStart(LOD) + 1) * 3;
         const lateralStep = Math.hypot(
           positions[a]! - positions[b]!,
           positions[a + 2]! - positions[b + 2]!,

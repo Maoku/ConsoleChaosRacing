@@ -25,7 +25,21 @@ import {
   trackSurfaceTexture,
   visibleSectors,
 } from './shared/track-mesh.js';
-import { ENTRANT_COLORS, PLAYER_ENTRANT, SKY_COLORS, generationValue } from './shared/variants.js';
+import {
+  tunnelAsset,
+  tunnelBlendAt,
+  tunnelLampAsset,
+  tunnelTexture,
+  tunnelVisible,
+} from './shared/tunnel.js';
+import {
+  ENTRANT_COLORS,
+  PLAYER_ENTRANT,
+  SKY_COLORS,
+  generationValue,
+  mixColor,
+  mixNumber,
+} from './shared/variants.js';
 
 /**
  * 第4世代（PS2）— 深度バッファと動的ライトのある 3D（実装計画 §3.4）。
@@ -47,6 +61,48 @@ import { ENTRANT_COLORS, PLAYER_ENTRANT, SKY_COLORS, generationValue } from './s
 
 /** フォグ密度 [1/m]。exp(-d·density) なので 100 m で 67%・300 m で 96% 霞む */
 const FOG_DENSITY = 0.011;
+
+/**
+ * トンネルの中のフォグ密度 [1/m]（実装計画 8-9）。
+ *
+ * 外より**薄くする**。フォグ色は空の色から引いているので、密度をそのままにすると
+ * 20 m 先の内壁まで空色に霞んで「霧のトンネル」になる。逆に薄くしておくと、
+ * 坑口の外だけが明るく霞み、出口の明かりが強く出る。
+ */
+const TUNNEL_FOG_DENSITY = 0.004;
+
+/**
+ * トンネルの中の照明（実装計画 8-9）。
+ *
+ * レンダラーは**最も強い点光源 1 つ**しか読まないので、灯具を並べて置くことはできない。
+ * 代わりに次の 3 つを `tunnelBlendAt()` で混ぜる。
+ *
+ * 1. 環境光を暗い青灰へ落とす（天井が空を塞いでいる状態）
+ * 2. 太陽（directional）を 0 近くまで落とす
+ * 3. 自機の上の点光源を、白からナトリウム灯の橙へ寄せて強くする
+ *
+ * **影を落とす光源も 3 番と同じ 1 つ**なので、トンネルの中では車の影が
+ * 天井の灯具から落ちる影に変わる。落ち影の倍率は高さで決まる（`KEY_LIGHT`）ので、
+ * 灯具の高さまで下げると影が大きく薄くなる — それがそのままトンネルらしさになる。
+ */
+const TUNNEL_AMBIENT = { color: '#39434f', intensity: 1 } as const;
+const TUNNEL_SUN = { color: '#4a4a48', intensity: 1 } as const;
+const TUNNEL_LIGHT = { height: 6, radius: 26, color: '#ffb257', intensity: 0.85 } as const;
+
+/**
+ * トンネルの躯体と灯具のマテリアル。
+ *
+ * 躯体は路面より暗く焼いてある（`ambient` を落とす）。**外から見ても中が暗い**
+ * ことが要るからで、フレームの照明だけで暗くすると、坑口をくぐった瞬間に
+ * 内壁の明るさが跳ねる。灯具は逆に `ambient` を 1 より大きく採る —
+ * シェーダは `uAmbient = material.ambient × 環境光` を 1 で頭打ちにするので、
+ * 環境光が 0.22 まで落ちるトンネルの中でも灯具だけは白く残る。
+ */
+const TUNNEL_SURFACE = { ambient: 0.5, diffuse: 0.4 } as const;
+const TUNNEL_LAMP_SURFACE = { ambient: 4, diffuse: 0 } as const;
+
+/** トンネルを積み始める距離 [m]。躯体は 1 つのメッシュなので粒度はこれで足りる */
+const TUNNEL_DRAW_DISTANCE = 320;
 
 /**
  * 映り込みの強さ。シェーダは
@@ -119,20 +175,24 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
   const camera = viewCamera({ track, car: player, view });
   frame.camera = camera;
 
-  for (const background of skylineBackgrounds(generation, profile, camera)) {
+  // トンネルらしさ 0..1。照明もフォグも映り込みも、この 1 つの値から混ぜる（8-9）
+  const inTunnel = tunnelBlendAt(track, player.s);
+
+  for (const background of skylineBackgrounds(generation, profile, camera, inTunnel)) {
     frame.backgrounds.push(background);
   }
 
   // ── ライト。太陽の向きは環境マップの最輝点から実測した 1 つの定数で、
   // 映り込みに写っている太陽と陰影が食い違わない
   const playerWorld = track.toWorld(player.s, player.lateral);
+  const keyHeight = mixNumber(KEY_LIGHT.height, TUNNEL_LIGHT.height, inTunnel);
   frame.lights.push(
     {
       id: `ambient-${generation}`,
       kind: 'ambient',
       position: [0, 0, 0],
-      color: AMBIENT_LIGHT.color,
-      intensity: AMBIENT_LIGHT.intensity,
+      color: mixColor(AMBIENT_LIGHT.color, TUNNEL_AMBIENT.color, inTunnel),
+      intensity: mixNumber(AMBIENT_LIGHT.intensity, TUNNEL_AMBIENT.intensity, inTunnel),
       radius: 0,
       generations: [generation],
     },
@@ -141,18 +201,19 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
       kind: 'directional',
       position: [0, 0, 0],
       direction: [...SUN_DIRECTION],
-      color: SUN_LIGHT.color,
-      intensity: SUN_LIGHT.intensity,
+      // 天井が空を塞ぐぶんを色で表す。向きは変えない（出口の外はもとの太陽のまま）
+      color: mixColor(SUN_LIGHT.color, TUNNEL_SUN.color, inTunnel),
+      intensity: mixNumber(SUN_LIGHT.intensity, TUNNEL_SUN.intensity, inTunnel),
       radius: 0,
       generations: [generation],
     },
     {
       id: `key-${generation}`,
       kind: 'point',
-      position: [playerWorld[0], playerWorld[1] + KEY_LIGHT.height, playerWorld[2]],
-      color: KEY_LIGHT.color,
-      intensity: KEY_LIGHT.intensity,
-      radius: KEY_LIGHT.radius,
+      position: [playerWorld[0], playerWorld[1] + keyHeight, playerWorld[2]],
+      color: mixColor(KEY_LIGHT.color, TUNNEL_LIGHT.color, inTunnel),
+      intensity: mixNumber(KEY_LIGHT.intensity, TUNNEL_LIGHT.intensity, inTunnel),
+      radius: mixNumber(KEY_LIGHT.radius, TUNNEL_LIGHT.radius, inTunnel),
       generations: [generation],
     } satisfies LightCommand,
   );
@@ -163,6 +224,9 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     baseColorTexture: trackSurfaceTexture(lod),
     // レンダラーは UV 補正をプロファイル（`affineTexture`）から決める。ここは意図の記録
     uvMode: 'perspective',
+    // 金網の網目を抜く（8-10）。路面・縁石・草地・壁の帯は全画素不透明なので、
+    // 同じマテリアルで路面を描いても 1 画素も落ちない
+    ...(lod.fenceHeight === null ? {} : { alphaCutoff: 0.5 }),
     ...SURFACE,
     generations: [generation],
   };
@@ -181,13 +245,56 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     });
   }
 
+  // ── トンネル（8-9）。位置が固定なので、区間へ近づいたときだけ 2 つ積む。
+  // 躯体と灯具でマテリアルが違う（灯具は環境光が落ちても明るいまま）
+  if (tunnelVisible(track, player.s, TUNNEL_DRAW_DISTANCE)) {
+    const structure: MaterialCommand = {
+      id: `tunnel-${generation}`,
+      baseColorTexture: tunnelTexture(lod),
+      uvMode: 'perspective',
+      ...TUNNEL_SURFACE,
+      generations: [generation],
+    };
+    const lamp: MaterialCommand = {
+      id: `tunnel-lamp-${generation}`,
+      baseColorTexture: tunnelTexture(lod),
+      uvMode: 'perspective',
+      ...TUNNEL_LAMP_SURFACE,
+      generations: [generation],
+    };
+    frame.materials.push(structure, lamp);
+    frame.meshes.push(
+      {
+        id: `tunnel-${generation}`,
+        geometry: TRACK_GEOMETRY,
+        asset: tunnelAsset(lod),
+        transform: { position: [0, 0, 0] },
+        color: '#ffffff',
+        material: structure.id,
+        receiveShadow: true,
+        generations: [generation],
+      },
+      {
+        id: `tunnel-lamp-${generation}`,
+        geometry: TRACK_GEOMETRY,
+        asset: tunnelLampAsset(lod),
+        transform: { position: [0, 0, 0] },
+        color: '#ffffff',
+        material: lamp.id,
+        generations: [generation],
+      },
+    );
+  }
+
   // ── 車。塗装テクスチャは無彩色 1 枚を 8 台で共有し、車体色は乗算だけで決まる。
   // 映り込みはマテリアル側なので、8 台とも同じ環境マップが同じ強さで乗る
   const carMaterial: MaterialCommand = {
     id: `car-${generation}`,
     baseColorTexture: carTextureFor(generation),
     environmentTexture: ENVIRONMENT_MAP.url,
-    environmentStrength: ENVIRONMENT_STRENGTH,
+    // トンネルの中では映り込みを 1/4 まで落とす（8-9）。映り込む空がそこには無い。
+    // **塗装が艶を失って出口でまた戻る**のが、この世代でしか出せない見え方になる
+    environmentStrength: ENVIRONMENT_STRENGTH * mixNumber(1, 0.25, inTunnel),
     uvMode: 'perspective',
     ...SURFACE,
     generations: [generation],
@@ -321,6 +428,8 @@ export function skylineBackgrounds(
   generation: GenerationId,
   profile: HardwareGenerationProfile,
   camera: CameraCommand,
+  /** トンネルらしさ 0..1。フォグ密度だけを混ぜる（8-9） */
+  inTunnel = 0,
 ): BackgroundCommand[] {
   const width = profile.video.internalWidth;
   const height = profile.video.internalHeight;
@@ -340,11 +449,13 @@ export function skylineBackgrounds(
 
   return [
     // テクスチャを持たない背景が空の階調とフォグ色を決める。帯が画面を覆うので
-    // 階調が見えることは無いが、フォグ色はここでしか指定できない
+    // 階調が見えることは無いが、フォグ色はここでしか指定できない。
+    // **色はトンネルの中でも変えない** — 変えると坑口の外の空まで暗くなり、
+    // 出口の明かりが消える（フォグ色は空の色と 1 つの値を共有している）
     {
       color: sky.bottom,
       secondaryColor: sky.top,
-      fogDensity: FOG_DENSITY,
+      fogDensity: mixNumber(FOG_DENSITY, TUNNEL_FOG_DENSITY, inTunnel),
       generations: [generation],
     },
     {

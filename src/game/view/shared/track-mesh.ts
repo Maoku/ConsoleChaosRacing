@@ -26,7 +26,79 @@ export interface TrackMeshLod {
   readonly textureSize: number;
   /** 自機のセクターから前後いくつ描くか。ここがそのまま描画距離の下限になる */
   readonly visibleRadius: number;
+  /**
+   * 壁の上に載せる金網フェンスの高さ [m]。`null` なら載せない（実装計画 8-6 / 8-10）。
+   *
+   * **第4世代だけが持つ。** 抜きの入ったテクスチャを引く面なので、
+   * マテリアルに `alphaCutoff` が要る（`gen4-ps2.ts`）。深度バッファの無い第3世代で
+   * 同じことをすると、抜けた画素の向こうにある物の順序が破綻する。
+   * 「載せないこと」がそのまま世代差になる。
+   */
+  readonly fenceHeight: number | null;
 }
+
+/**
+ * 路面アトラスの u 帯（実装計画 §2.6）。
+ *
+ * **`tools/build-track-mesh.mjs`・`scenery-mesh.ts`・`track-mesh.spec.ts` が共有する。**
+ * 面ごとにテクスチャを分けられない（メッシュ 1 つにマテリアル 1 つ）ので、
+ * 当時のテクスチャページと同じように 1 枚を帯で仕切る。
+ *
+ * 幅の配り方は**必要な密度**から決めてある。第4世代（512²）での texel/m は
+ * 路面 15.8・縁石 26・草地 6.8・壁 41・フェンス 46・タイヤ 65。
+ * 草地は粒しか無いので粗くてよく、タイヤとフェンスは形が読めなければ意味が無い。
+ *
+ * 各帯は境界から 0.012 だけ内側に UV を寄せてある。線形フィルタの世代で
+ * 隣の帯がにじみ込まないための余白で、ミップマップは使われないので遠方でも混ざらない。
+ */
+export const TRACK_ATLAS = {
+  /** 路面。左端 → 右端 */
+  road: { from: 0.012, to: 0.388 },
+  /**
+   * 中央の破線が占める u 帯。**路面帯の内側に切ってある**（8-11）。
+   *
+   * 256² で 50〜53 texel、512² で 100〜106 texel。どちらも texel の境界にちょうど乗るので、
+   * nearest の第3世代でも帯の内側は白 3 texel だけになり、外へ 1 画素も溢れない。
+   * メッシュ側はこの境目を頂点の列にする（`roadColumns`）。
+   */
+  centerLine: { from: 50 / 256, to: 53 / 256 },
+  /** 縁石。外 → 路面側 */
+  curb: { outer: 0.412, inner: 0.448 },
+  /** 草地と土手。外 → 内 */
+  grass: { outer: 0.472, inner: 0.568 },
+  /** 壁。下端 → 上端（u が縦に貼られる） */
+  wall: { bottom: 0.592, top: 0.648 },
+  /** 金網フェンス。下端 → 上端。第4世代だけが引く */
+  fence: { bottom: 0.672, top: 0.848 },
+  /** タイヤフェンス。背面 → 前面の頂点 → 背面（弧に沿って） */
+  tyres: { bottom: 0.872, top: 0.988 },
+} as const;
+
+/**
+ * v 方向のタイル長 [m]。テクスチャ 1 枚が進行方向に何 m を受け持つか。
+ *
+ * 路面は破線 1 周期・縁石は縞 1 周期・フェンスは支柱 1 本・タイヤは 4 本ぶん。
+ * **タイヤだけは `scenery-mesh.ts` も読む** — 積んだタイヤの継ぎ目が
+ * メッシュの分割と合わないと、タイヤの真ん中に溝が来る。
+ */
+export const TRACK_ATLAS_TILES = {
+  road: 8,
+  curb: 4,
+  grass: 6,
+  wall: 4,
+  fence: 4,
+  tyres: 2.8,
+} as const;
+
+/** アトラスを 6 つに仕切る境界。テクスチャを塗るときの区画（UV はこの内側に収まる） */
+export const TRACK_ATLAS_SLOTS = {
+  road: [0, 0.4],
+  curb: [0.4, 0.46],
+  grass: [0.46, 0.58],
+  wall: [0.58, 0.66],
+  fence: [0.66, 0.86],
+  tyres: [0.86, 1],
+} as const;
 
 /**
  * 第3世代は 4 m 刻み。**あえて粗くするのではなく、細かくしすぎない**ことで
@@ -50,6 +122,7 @@ export const TRACK_MESH_LODS: GenerationVariant<TrackMeshLod | null> = defineGen
     roadSpans: 6,
     textureSize: 256,
     visibleRadius: 1,
+    fenceHeight: null,
   },
   PS2: {
     directory: 'gen4',
@@ -58,11 +131,48 @@ export const TRACK_MESH_LODS: GenerationVariant<TrackMeshLod | null> = defineGen
     roadSpans: 6,
     textureSize: 512,
     visibleRadius: 5,
+    // 壁の上に 2.2 m の金網。抜きのある面なのでマテリアルに alphaCutoff が要る
+    fenceHeight: 2.2,
   },
 });
 
 export function trackMeshLodFor(generation: GenerationId): TrackMeshLod | null {
   return generationValue(TRACK_MESH_LODS, generation);
+}
+
+/**
+ * 路面を横に割る列の位置 t（0 ＝ 左端 / 1 ＝ 右端）。**`roadSpans` の等分に加えて、
+ * 中央の破線の両縁を必ず列にする**（8-11）。
+ *
+ * 等分だけで割ると、破線は四角形の境目（`roadSpans` が偶数なら t = 0.5）に跨がる。
+ * アフィンテクスチャの u は三角形ごとに別々の傾きで補間されるので、跨いだ線は
+ * 左半分と右半分が別々に歪み、境目で食い違って折れる — 第3世代の実画面で
+ * 中央線が手前ほど太い楔に崩れていたのはこれ。
+ *
+ * 帯の縁を頂点にしてしまえば、線の横幅は**頂点の投影そのもの**になる。
+ * 四角形の内側で u がどう歪んでも、帯の内側は白・外側はアスファルトのままで、
+ * 縁が折れることは無い。縦（v）方向の歪み ＝ 破線の伸び縮みは残るので、
+ * 「アフィン歪みを打ち消さない」という第3世代の設計はそのまま。
+ *
+ * 増えるのは 1 輪あたり四角形 1 つ（＝三角形 2 つ）だけ。第4世代は
+ * パースペクティブ補正が効くので元から折れないが、**同じ断面から焼く**ため列も揃える。
+ *
+ * **`tools/build-track-mesh.mjs` と `tests/track-mesh.spec.ts` が共有する。**
+ */
+export function roadColumns(lod: TrackMeshLod): number[] {
+  const width = TRACK_ATLAS.road.to - TRACK_ATLAS.road.from;
+  const from = (TRACK_ATLAS.centerLine.from - TRACK_ATLAS.road.from) / width;
+  const to = (TRACK_ATLAS.centerLine.to - TRACK_ATLAS.road.from) / width;
+  const columns: number[] = [];
+  for (let span = 0; span <= lod.roadSpans; span++) {
+    const t = span / lod.roadSpans;
+    // 帯の中（と縁そのもの）に落ちる等分点は捨てる。幅 0 の四角形を作らないため
+    if (t >= from && t <= to) continue;
+    columns.push(t);
+  }
+  columns.push(from, to);
+  columns.sort((left, right) => left - right);
+  return columns;
 }
 
 /** セクター GLB の URL。生成ツールもこの関数でファイル名を決める */

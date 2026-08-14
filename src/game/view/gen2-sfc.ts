@@ -20,6 +20,7 @@ import { roadSurfaceFor } from './shared/road-surface.js';
 import { sceneryFor } from './shared/scenery.js';
 import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
+import { tunnelScreen, type TunnelScreen } from './shared/tunnel-sprite.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue, rgb01 } from './shared/variants.js';
 
 /**
@@ -61,6 +62,9 @@ const FOG_BANDS = [
 
 /** 落ち影。color math の subtract half ＝ 路面を半分に落として少し引く */
 const SHADOW_COLOR = '#181820';
+
+/** トンネルの中の路面から引く色（8-9）。青みを残すと蛍光灯の下に見える */
+const TUNNEL_ROAD_COLOR = '#182028';
 /** 影の大きさ（セルの一辺に対する比）と、接地点からの潰れ具合 */
 const SHADOW_WIDTH = 0.42;
 const SHADOW_FLATTEN = 0.3;
@@ -118,6 +122,11 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   // 車（不透明・別面）より奥に入る。積む順は手前の帯から
   for (const band of fogBands(view, generation)) frame.sprites.push(band);
 
+  // ── トンネル（8-9）。第1世代と**同じ坑口の式**を通し、路面を落とすほうだけ
+  // この世代の道具（color math の subtract）に差し替える
+  const tunnel = tunnelScreen({ generation, profile, track, view });
+  for (const band of tunnelRoadBands(view, tunnel, generation)) frame.sprites.push(band);
+
   // ── スプライト。登録順（＝優先度）は 自機 → ミニマップのマーカー → ライバル車
   const placement: CarPlacementOptions = {
     view,
@@ -163,6 +172,7 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
       track,
       objects: sceneryFor(track),
       atlas: scenery,
+      farClip: tunnel.sceneryClip,
     })) {
       entries.push({
         entity: NO_ENTITY,
@@ -179,7 +189,7 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   pushSpritePlane(frame, {
     profile,
     entries,
-    background: [minimap.panelSprite],
+    background: [...tunnel.panels, minimap.panelSprite],
     foreground: hud.sprites,
   });
 }
@@ -226,6 +236,54 @@ function shadowSprite(
     hardwareBlend: { family: 'gen2-color-math', operation: 'subtract', half: true },
     generations: [generation],
   };
+}
+
+/**
+ * トンネルの中の路面を落とす帯（実装計画 8-9）。
+ *
+ * アフィン面には第1世代の `brightness` にあたる項が無いので、フォグと同じく
+ * **上から重ねる**。`subtract` + `half` は背面を半分に落としてから色を引く
+ * 実機の color math そのもので、落ち影（`shadowSprite`）と同じ道具になる。
+ *
+ * 帯は連続した行の範囲を 1 枚で覆う。トンネルの区間は弧長で連続していて、
+ * 行 → 距離が単調なので、**中に映る行も必ず連続した 1 つの範囲**になる。
+ */
+function tunnelRoadBands(
+  view: RoadView,
+  tunnel: TunnelScreen,
+  generation: ViewContext['generation'],
+): SpriteCommand[] {
+  const top = view.camera.roadTopRow;
+  let from = -1;
+  let to = -1;
+  for (let row = top; row < view.screenHeight; row++) {
+    if (!tunnel.shadedRow(row + 0.5)) continue;
+    if (from < 0) from = row;
+    to = row + 1;
+  }
+  if (from < 0) return [];
+
+  return [
+    {
+      id: `road-tunnel-${generation}`,
+      screenSpace: true,
+      position: [view.screenWidth / 2, (from + to) / 2, 0],
+      size: [view.screenWidth, to - from],
+      color: TUNNEL_ROAD_COLOR,
+      texture: MARKER_ATLAS.url,
+      cell: MARKER_ATLAS.cells.fill,
+      layer: 11,
+      // 背面を半分にしてから固定色を引く。半分だけでは足りない暗さをここで作る
+      hardwareBlend: {
+        family: 'gen2-color-math',
+        operation: 'subtract',
+        half: true,
+        operand: 'fixed',
+        fixedColor: rgb01(TUNNEL_ROAD_COLOR),
+      },
+      generations: [generation],
+    },
+  ];
 }
 
 /** 遠方ほど厚く重なるフォグの帯。各帯は路面帯の上端から `distance` の行まで */

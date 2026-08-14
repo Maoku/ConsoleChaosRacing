@@ -23,6 +23,11 @@ import { roadSurfaceFor } from './shared/road-surface.js';
 import { sceneryFor } from './shared/scenery.js';
 import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
+import {
+  TUNNEL_ROAD_SHADE,
+  tunnelScreen,
+  type TunnelScreen,
+} from './shared/tunnel-sprite.js';
 import { PLAYER_ENTRANT, SKY_COLORS, generationValue } from './shared/variants.js';
 
 /**
@@ -90,7 +95,9 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
     frame.backgrounds.push(background);
   }
 
-  frame.rasterSurfaces.push(buildRoadSurface(view, generation));
+  // ── トンネル（8-9）。走査線の明るさと、坑口の矩形 3 枚だけで出す
+  const tunnel = tunnelScreen({ generation, profile, track, view });
+  frame.rasterSurfaces.push(buildRoadSurface(view, generation, tunnel));
 
   // ── スプライト。登録順（＝優先度）は 自機 → ミニマップのマーカー → ライバル車
   const placement: CarPlacementOptions = { view, track, profile, generation, atlas };
@@ -144,6 +151,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
       track,
       objects: sceneryFor(track),
       atlas: scenery,
+      farClip: tunnel.sceneryClip,
     })) {
       entries.push({
         entity: NO_ENTITY,
@@ -155,13 +163,14 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   }
 
   // 走査線制限・重ね順・BG 相当の扱いは `sprite-plane.ts` に集約してある。
-  // ミニマップの枠と HUD の文字は BG 相当なので制限の外。枠は最背面、
-  // HUD は最前面（実機の BG 面も優先度ビットでスプライトの前後どちらにも置けた）
+  // 坑口の壁・ミニマップの枠・HUD の文字はどれも実機なら BG タイル面のもので、
+  // スプライト枠を消費しない。壁と枠は最背面（壁が枠の後ろ）、HUD は最前面
+  // （実機の BG 面も優先度ビットでスプライトの前後どちらにも置けた）
   const hud = buildHud({ generation, profile, display, screen: context.screen });
   const culled = pushSpritePlane(frame, {
     profile,
     entries,
-    background: [minimap.panelSprite],
+    background: [...tunnel.panels, minimap.panelSprite],
     foreground: hud.sprites,
   });
   flicker.commit(culled);
@@ -177,6 +186,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
 function buildRoadSurface(
   view: ReturnType<typeof createRoadView>,
   generation: ViewContext['generation'],
+  tunnel: TunnelScreen,
 ): RasterSurfaceCommand {
   const top = view.camera.roadTopRow;
   const rows = view.screenHeight - top;
@@ -184,10 +194,17 @@ function buildRoadSurface(
 
   for (let index = 0; index < rows; index++) {
     // シェーダは行の中心でテーブルを引く。距離も画素の中心で求める
-    const distance = view.distanceAtRow(top + index + 0.5);
+    const row = top + index + 0.5;
+    const distance = view.distanceAtRow(row);
     const depth = Math.min(1, distance / view.maxDistance);
     const stripe = index % 2 === 0 ? 1 : 1 - SCANLINE_STRIPE * (1 - depth);
-    const shade = (1 - DEPTH_SHADE * depth) * stripe;
+    // トンネルの中を映している行は**明るさをまるごと差し替える**（8-9）。
+    // 走査線ごとにパレットを差し替えていた実機の作法そのもので、
+    // メッシュを 1 つも足さずに済む。奥行きの階調と縞を掛けないのは、
+    // 量子化の落ち先が行ごとに揺れて路面が縞に割れるため（`TUNNEL_ROAD_SHADE`）
+    const shade = tunnel.shadedRow(row)
+      ? TUNNEL_ROAD_SHADE
+      : (1 - DEPTH_SHADE * depth) * stripe;
 
     const offset = index * 4;
     scanlines[offset] = view.sourceCenterAt(distance);

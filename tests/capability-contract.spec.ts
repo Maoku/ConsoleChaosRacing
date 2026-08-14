@@ -26,15 +26,22 @@ function blendableCommands(frame: RenderFrame) {
 }
 
 /**
- * 実機で BG タイル面に描かれていたもの（ミニマップの枠・HUD の文字とパネル）。
+ * 実機で BG タイル面に描かれていたもの（ミニマップの枠・HUD の文字とパネル・坑口の壁）。
  *
  * これらはスプライト枠を消費しなかったので、`applyScanlineLimit` の対象外に置いてある
  * （実装計画 §3.6 の決定）。本エンジンにはタイル面の API が無いためスプライトで
  * 代用しているだけで、走査線あたりの上限を数えるときは除く。
+ *
+ * トンネルの坑口（8-9）も同じ扱いにする。当時の擬似3D racer でトンネルの妻壁が
+ * スプライトで描かれることは無く、BG のタイルを敷き詰めるものだった
+ * — 画面の広い面積を占める不透明な絵は、8 スプライト/走査線では最初から成立しない。
  */
 function isBackgroundPlane(id: string): boolean {
   return (
-    id.startsWith('minimap-panel') || id.startsWith('hud-') || id.startsWith('screen-')
+    id.startsWith('minimap-panel') ||
+    id.startsWith('hud-') ||
+    id.startsWith('screen-') ||
+    id.startsWith('tunnel-')
   );
 }
 

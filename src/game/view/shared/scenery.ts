@@ -1,4 +1,5 @@
 import type { Track } from '../../sim/track.js';
+import { insideTunnel } from './tunnel.js';
 
 /**
  * 背景オブジェクトの配置（実装計画 8-6）。
@@ -51,8 +52,17 @@ const TYRE_SPACING = 12;
  */
 const OFFSET = { sign: 5, tree: 20, tyres: 3 } as const;
 
-/** 高さ [m]。擬似3D 世代のスプライトの大きさもここから決まる */
+/** 高さ [m]。スプライトもビルボードもこの値を世界での寸法として使う */
 const HEIGHT = { sign: 3.2, tree: 7, tyres: 1.1 } as const;
+
+/**
+ * 木の背丈 [m]（実装計画 8-10）。
+ *
+ * **全部同じ背丈だと並木が「同じ絵の反復」に見える**（実画面でいちばん目立った粗さ）。
+ * 乱数は使わず、`s` の刻み番号と左右から決まる 4 周期の表を引く。
+ * 第4世代は絵のほうも 3 種類あるので、見かけの周期は 12 本ぶんに伸びる。
+ */
+const TREE_HEIGHTS = [7.6, 6.4, 8.2, 6.9] as const;
 
 /** コーナーの外側はどちら向きか。曲率は左が正なので、左コーナーの外側は右 */
 function outsideSign(curvature: number): number {
@@ -107,15 +117,16 @@ export function sceneryObjects(track: Track): readonly SceneryObject[] {
   }
 
   // ── 木。タイヤフェンスを置いた区間には置かない（近すぎて重なる）
-  for (let s = 0; s < track.length; s += TREE_SPACING) {
+  for (let step = 0; step * TREE_SPACING < track.length; step++) {
+    const s = step * TREE_SPACING;
     const sample = track.sampleAt(s);
     if (Math.abs(sample.curvature) >= TIGHT_CURVATURE) continue;
-    for (const side of [-1, 1]) {
+    for (const [index, side] of [-1, 1].entries()) {
       objects.push({
         kind: 'tree',
         s,
         lateral: side * (sample.halfWidth + OFFSET.tree),
-        height: HEIGHT.tree,
+        height: TREE_HEIGHTS[(step * 2 + index) % TREE_HEIGHTS.length] ?? HEIGHT.tree,
       });
     }
   }
@@ -123,7 +134,12 @@ export function sceneryObjects(track: Track): readonly SceneryObject[] {
   // `s` の昇順に並べ、同じ `s` では左から。**並びが決まっていること**が
   // 「4 世代で同じ id が同じ物を指す」ための条件になる
   objects.sort((left, right) => left.s - right.s || left.lateral - right.lateral);
-  return objects.map((object, id) => ({ id, ...object }));
+  // トンネルの中には何も置かない（8-9）。中からは内壁で見えず、外からは坑口の
+  // 外に立つので、置いても得が無い。**間引くのは 4 世代とも同じ**なので、
+  // 「同じ物が同じ場所にある」という 8-6 の主張は保たれる
+  return objects
+    .filter((object) => !insideTunnel(track, object.s))
+    .map((object, id) => ({ id, ...object }));
 }
 
 /**

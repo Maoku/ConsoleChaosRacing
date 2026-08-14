@@ -13,10 +13,11 @@ import {
 } from '../src/game/view/shared/scenery.js';
 import { tyreWallDrawDistance } from '../src/game/view/shared/scenery-mesh.js';
 import {
-  SCENERY_SPRITE_GEOMETRY,
   sceneryBillboardAtlasFor,
   scenerySpriteAtlasFor,
+  type ScenerySpriteAtlas,
 } from '../src/game/view/shared/scenery-sprite.js';
+import { insideTunnel } from '../src/game/view/shared/tunnel.js';
 import { PLAYER_ENTRANT } from '../src/game/view/shared/variants.js';
 import { decodePng } from '../tools/lib/png.mjs';
 import { buildFrame, raceAfter } from './support/frame.js';
@@ -90,10 +91,25 @@ describe('背景オブジェクト', () => {
     expect(scenerySpriteAtlasFor('PS2')).toBeNull();
   });
 
-  it('3D 世代はビルボードが木だけ、タイヤフェンスは第4世代のメッシュ', () => {
-    for (const generation of ['PS1', 'PS2'] as const) {
-      expect(sceneryBillboardAtlasFor(generation)!.kinds).toEqual(['tree']);
+  it('トンネルの中には 1 つも置かない（4 世代とも同じように間引く）', () => {
+    for (const object of sceneryObjects(track)) {
+      expect(insideTunnel(track, object.s), `id ${object.id}`).toBe(false);
     }
+  });
+
+  it('木の背丈がばらついている（並木が同じ絵の反復に見えない）', () => {
+    const heights = new Set(
+      sceneryOfKinds(sceneryObjects(track), ['tree']).map((object) => object.height),
+    );
+    expect(heights.size).toBeGreaterThanOrEqual(4);
+  });
+
+  it('3D 世代はビルボードが木、第4世代は看板も。タイヤフェンスは第4世代のメッシュ', () => {
+    expect(sceneryBillboardAtlasFor('PS1')!.kinds).toEqual(['tree']);
+    // 第4世代だけ看板もビルボードで置く（8-10）。木のセルは 3 種類ある
+    expect(sceneryBillboardAtlasFor('PS2')!.kinds).toEqual(['sign', 'tree']);
+    expect(sceneryBillboardAtlasFor('PS2')!.layout.cells.tree).toHaveLength(3);
+    expect(sceneryBillboardAtlasFor('PS1')!.layout.cells.tree).toHaveLength(1);
     expect(sceneryBillboardAtlasFor('FC')).toBeNull();
     expect(sceneryBillboardAtlasFor('SFC')).toBeNull();
     // 第3世代にタイヤフェンスは置かない（スロットとドローコールを増やさない）
@@ -110,31 +126,44 @@ describe('背景オブジェクト', () => {
    * — 実画面で起きた。例外にならないので、ここで向きを固定する。
    */
   describe('焼いた絵の向き', () => {
-    /** 木のセルの中で、幹（画像の下寄りの細い塊）がどちら側にあるか */
-    function trunkAtImageTop(url: string, cellSize: number): boolean {
-      const image = decodePng(readFileSync(join(process.cwd(), 'public', url)));
-      const column = SCENERY_SPRITE_GEOMETRY.cells.tree * cellSize;
+    /**
+     * 木のセルの中で、幹が画像の上側にあるか。
+     *
+     * 判定は**色**で行う。幹は茶（赤 > 緑）・葉は緑（緑 > 赤）なので、
+     * セルの上下 12 % の帯でどちらが多いかを数えれば、木の形に依らず向きが分かる。
+     * 不透明な画素の量で数えると、下ほど広がる針葉樹を逆さまと判定してしまう。
+     */
+    function trunkAtImageTop(atlas: ScenerySpriteAtlas, cell: number): boolean {
+      const image = decodePng(readFileSync(join(process.cwd(), 'public', atlas.url)));
+      const size = atlas.cellSize;
+      const originX = (cell % atlas.layout.columns) * size;
+      const originY = Math.floor(cell / atlas.layout.columns) * size;
+      const edge = Math.round(size * 0.12);
       let top = 0;
       let bottom = 0;
-      for (let y = 0; y < cellSize; y++) {
-        let opaque = 0;
-        for (let x = 0; x < cellSize; x++) {
-          if (image.pixels[((y * image.width + column + x) * 4) + 3]! >= 8) opaque += 1;
+      for (let y = 0; y < size; y++) {
+        if (y >= edge && y < size - edge) continue;
+        for (let x = 0; x < size; x++) {
+          const offset = ((originY + y) * image.width + originX + x) * 4;
+          if (image.pixels[offset + 3]! < 8) continue;
+          const brown = image.pixels[offset]! > image.pixels[offset + 1]! ? 1 : -1;
+          if (y < edge) top += brown;
+          else bottom += brown;
         }
-        // 幹の行は不透明な画素がごく少ない（葉の塊は広い）
-        if (opaque === 0) continue;
-        if (y < cellSize / 2) top += opaque;
-        else bottom += opaque;
       }
-      // 葉の塊のあるほうが「木の上」。幹はその反対側
-      return bottom > top;
+      expect(Math.sign(top), '上下の帯が同じ色に見える（判定できていない）').not.toBe(
+        Math.sign(bottom),
+      );
+      return top > 0;
     }
 
     it('擬似3D 世代は上下反転して焼いてある', () => {
       for (const generation of ['FC', 'SFC'] as const) {
         const atlas = scenerySpriteAtlasFor(generation)!;
         expect(atlas.flipCells).toBe(true);
-        expect(trunkAtImageTop(atlas.url, atlas.cellSize), generation).toBe(true);
+        for (const cell of atlas.layout.cells.tree) {
+          expect(trunkAtImageTop(atlas, cell), `${generation} セル ${cell}`).toBe(true);
+        }
       }
     });
 
@@ -142,8 +171,11 @@ describe('背景オブジェクト', () => {
       for (const generation of ['PS1', 'PS2'] as const) {
         const atlas = sceneryBillboardAtlasFor(generation)!;
         expect(atlas.flipCells).toBe(false);
-        // 葉が画像の上・幹が下。ワールド空間ではこれがそのまま立つ向きになる
-        expect(trunkAtImageTop(atlas.url, atlas.cellSize), generation).toBe(false);
+        // 葉が画像の上・幹が下。ワールド空間ではこれがそのまま立つ向きになる。
+        // **木のセルが 3 つある第4世代は 3 つとも**確かめる（8-10）
+        for (const cell of atlas.layout.cells.tree) {
+          expect(trunkAtImageTop(atlas, cell), `${generation} セル ${cell}`).toBe(false);
+        }
       }
     });
   });

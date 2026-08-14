@@ -22,17 +22,18 @@ import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import { TYRE_WALL, TYRE_WALLS } from '../game/view/shared/scenery-mesh.js';
-import {
-  SCENERY_BILLBOARDS,
-  SCENERY_SPRITES,
-  SCENERY_SPRITE_GEOMETRY,
-} from '../game/view/shared/scenery-sprite.js';
+import { SCENERY_BILLBOARDS, SCENERY_SPRITES } from '../game/view/shared/scenery-sprite.js';
 import { TACHO_ATLAS, TACHOMETERS } from '../game/view/shared/tachometer.js';
 import {
   TRACK_MESH_LODS,
   trackSectorAsset,
   trackSurfaceTexture,
 } from '../game/view/shared/track-mesh.js';
+import {
+  tunnelAsset,
+  tunnelLampAsset,
+  tunnelTexture,
+} from '../game/view/shared/tunnel.js';
 
 /**
  * 車のテクスチャもテーブルから導く。塗装テクスチャは無彩色 1 枚で全車が共有し、
@@ -86,15 +87,10 @@ const backdropTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generatio
  * 擬似3D 世代はスクリーン空間、3D 世代はワールド空間のビルボードとして引く
  */
 const sceneryAtlases = GENERATION_IDS.flatMap((generation) => {
-  const layout = SCENERY_SPRITES[generation] ?? SCENERY_BILLBOARDS[generation];
-  return layout
-    ? [
-        {
-          url: layout.url,
-          columns: SCENERY_SPRITE_GEOMETRY.columns,
-          rows: SCENERY_SPRITE_GEOMETRY.rows,
-        },
-      ]
+  const atlas = SCENERY_SPRITES[generation] ?? SCENERY_BILLBOARDS[generation];
+  // セルの並びはアトラスごとに違う（第4世代だけ 3×2 の 6 セル・8-10）
+  return atlas
+    ? [{ url: atlas.url, columns: atlas.layout.columns, rows: atlas.layout.rows }]
     : [];
 });
 
@@ -129,7 +125,29 @@ const trackTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) 
   if (!lod) return [];
   // v 方向に周回ぶんタイルするので repeat。u は帯の内側に収めてある。
   // flipY: false はメッシュのテクスチャ共通の規約（下の textures のコメントを参照）
-  return [{ url: trackSurfaceTexture(lod), wrap: 'repeat' as const, flipY: false }];
+  return [
+    { url: trackSurfaceTexture(lod), wrap: 'repeat' as const, flipY: false },
+    // トンネル（生成物 / tools/build-tunnel-mesh.mjs・8-9）。躯体と灯具が共有する
+    { url: tunnelTexture(lod), wrap: 'repeat' as const, flipY: false },
+  ];
+});
+
+/**
+ * トンネルの躯体と灯具（生成物 / tools/build-tunnel-mesh.mjs・8-9）。
+ *
+ * 2 つに分けてあるのはマテリアルを分けるためで、灯具だけは環境光が落ちても
+ * 明るいままにする。第3世代は深度バッファが無いので、路面と同じ
+ * `polygonSort` を掛けて三角形単位に分配する。
+ */
+const tunnelModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
+  const lod = TRACK_MESH_LODS[generation];
+  if (!lod) return [];
+  const needsPolygonSort = !HARDWARE_GENERATION_PROFILES[generation].video.depthBuffer;
+  const sort = needsPolygonSort ? { polygonSort: true } : {};
+  return [
+    { url: tunnelAsset(lod), ...sort },
+    { url: tunnelLampAsset(lod), ...sort },
+  ];
 });
 
 /**
@@ -194,6 +212,7 @@ export const MANIFEST: RenderAssetManifest = {
     { url: 'assets/gen3/models/car.glb', polygonSort: true },
     { url: 'assets/gen4/models/car.glb' },
     ...trackModels,
+    ...tunnelModels,
     // 生成物（tools/build-scenery-mesh.mjs・8-6）。置くのは第4世代だけ
     ...tyreWallModels,
   ],

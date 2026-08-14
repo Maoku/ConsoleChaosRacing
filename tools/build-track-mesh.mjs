@@ -22,7 +22,11 @@ import { GENERATION_IDS } from '@console-chaos/engine';
 
 import { TRACK } from '../src/game/sim/track.ts';
 import {
+  TRACK_ATLAS,
+  TRACK_ATLAS_SLOTS,
+  TRACK_ATLAS_TILES,
   TRACK_MESH_LODS,
+  roadColumns,
   trackSectorAsset,
   trackSurfaceTexture,
 } from '../src/game/view/shared/track-mesh.ts';
@@ -57,76 +61,92 @@ const WALL_HEIGHT = 1;
  */
 const APRON_WIDTH = 12;
 
-// ── アトラスの u 帯（`buildSurfaceTexture` と一致させる）
-const BAND = {
-  roadFrom: 0.015,
-  roadTo: 0.485,
-  curbOuter: 0.515,
-  curbInner: 0.685,
-  grassOuter: 0.715,
-  grassInner: 0.865,
-  // 壁は下端が帯の下、上端が帯の上（u が縦に貼られる）
-  wallBottom: 0.895,
-  wallTop: 0.985,
-};
-
-// ── v のタイル長 [m]。路面は破線 1 周期、縁石は縞 1 周期
-const TILE = { road: 8, curb: 4, grass: 6, wall: 4 };
+// ── v のタイル長 [m]。定義は `track-mesh.ts` にあり、タイヤの帯は背景メッシュとも共有する
+const TILE = TRACK_ATLAS_TILES;
 
 /**
  * 断面の 1 点。`lateral` は中心線からの右向き距離、`height` は路面からの高さ。
  * どちらもバンク回転の前の値で、ワールドへ移すときにまとめて回す。
+ *
+ * `fenceHeight` を持つ LOD（第4世代）だけは、壁の上に金網の面を 1 枚ずつ足す。
+ * 壁と分けるのは u の密度のためで、金網は 46 texel/m 無いと網目が読めない
+ * （壁の帯へ押し込むと 20 texel/m しか取れず、遠方で網目がちらつくだけになる）。
+ *
+ * 路面の列 `columns` は `roadColumns()` が決める。等分ではなく**中央の破線の縁を
+ * 含む**列で、そのおかげで破線がアフィン歪みで折れない（8-11）。
  */
-function crossSection(halfWidth, roadSpans) {
+function crossSection(halfWidth, columns, fenceHeight) {
   const points = [];
   const push = (lateral, height, u, tile) => points.push({ lateral, height, u, tile });
   const outer = halfWidth + CURB_WIDTH + GRASS_WIDTH;
   const apronHeight = -GRASS_DROP + WALL_HEIGHT;
+  const strips = [];
+  const fence = fenceHeight ?? 0;
 
   // 左の土手。壁の上端の高さで平らに伸ばす。**列は左から右へ**（法線が上を向く向き）
-  push(-(outer + APRON_WIDTH), apronHeight, BAND.grassOuter, TILE.grass);
-  push(-outer, apronHeight, BAND.grassInner, TILE.grass);
+  push(-(outer + APRON_WIDTH), apronHeight, TRACK_ATLAS.grass.outer, TILE.grass);
+  push(-outer, apronHeight, TRACK_ATLAS.grass.inner, TILE.grass);
+  strips.push([0, 1]);
+
+  // 左の金網（あれば）。**列は上から下へ** — 壁と同じ理由で、法線がコース中心を向く
+  if (fence > 0) {
+    push(-outer, apronHeight + fence, TRACK_ATLAS.fence.top, TILE.fence);
+    push(-outer, apronHeight, TRACK_ATLAS.fence.bottom, TILE.fence);
+    strips.push([2, 3]);
+  }
 
   // 左の壁。**列は上から下へ並べる** — 面の法線は「列の向き × 進行方向」なので、
   // 上から下へ並べたときだけ法線がコース中心（右）を向く。逆にすると裏面カリングで消える
-  push(-outer, apronHeight, BAND.wallTop, TILE.wall);
-  push(-outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
+  const wall = points.length;
+  push(-outer, apronHeight, TRACK_ATLAS.wall.top, TILE.wall);
+  push(-outer, -GRASS_DROP, TRACK_ATLAS.wall.bottom, TILE.wall);
+  strips.push([wall, wall + 1]);
 
-  push(-outer, -GRASS_DROP, BAND.grassOuter, TILE.grass);
-  push(-(halfWidth + CURB_WIDTH), -CURB_DROP, BAND.grassInner, TILE.grass);
-  push(-(halfWidth + CURB_WIDTH), -CURB_DROP, BAND.curbOuter, TILE.curb);
-  push(-halfWidth, 0, BAND.curbInner, TILE.curb);
-  for (let span = 0; span <= roadSpans; span++) {
-    const t = span / roadSpans;
-    push(-halfWidth + 2 * halfWidth * t, 0, BAND.roadFrom + (BAND.roadTo - BAND.roadFrom) * t, TILE.road);
+  push(-outer, -GRASS_DROP, TRACK_ATLAS.grass.outer, TILE.grass);
+  push(-(halfWidth + CURB_WIDTH), -CURB_DROP, TRACK_ATLAS.grass.inner, TILE.grass);
+  strips.push([wall + 2, wall + 3]);
+  push(-(halfWidth + CURB_WIDTH), -CURB_DROP, TRACK_ATLAS.curb.outer, TILE.curb);
+  push(-halfWidth, 0, TRACK_ATLAS.curb.inner, TILE.curb);
+  strips.push([wall + 4, wall + 5]);
+
+  const road = points.length;
+  for (const t of columns) {
+    push(
+      -halfWidth + 2 * halfWidth * t,
+      0,
+      TRACK_ATLAS.road.from + (TRACK_ATLAS.road.to - TRACK_ATLAS.road.from) * t,
+      TILE.road,
+    );
   }
-  push(halfWidth, 0, BAND.curbInner, TILE.curb);
-  push(halfWidth + CURB_WIDTH, -CURB_DROP, BAND.curbOuter, TILE.curb);
-  push(halfWidth + CURB_WIDTH, -CURB_DROP, BAND.grassInner, TILE.grass);
-  push(outer, -GRASS_DROP, BAND.grassOuter, TILE.grass);
+  strips.push([road, road + columns.length - 1]);
+
+  const last = points.length;
+  push(halfWidth, 0, TRACK_ATLAS.curb.inner, TILE.curb);
+  push(halfWidth + CURB_WIDTH, -CURB_DROP, TRACK_ATLAS.curb.outer, TILE.curb);
+  strips.push([last, last + 1]);
+  push(halfWidth + CURB_WIDTH, -CURB_DROP, TRACK_ATLAS.grass.inner, TILE.grass);
+  push(outer, -GRASS_DROP, TRACK_ATLAS.grass.outer, TILE.grass);
+  strips.push([last + 2, last + 3]);
 
   // 右の壁は逆に、下から上へ（法線がコース中心 ＝ 左を向く）
-  push(outer, -GRASS_DROP, BAND.wallBottom, TILE.wall);
-  push(outer, apronHeight, BAND.wallTop, TILE.wall);
+  push(outer, -GRASS_DROP, TRACK_ATLAS.wall.bottom, TILE.wall);
+  push(outer, apronHeight, TRACK_ATLAS.wall.top, TILE.wall);
+  strips.push([last + 4, last + 5]);
+
+  // 右の金網（あれば）も下から上へ
+  if (fence > 0) {
+    const at = points.length;
+    push(outer, apronHeight, TRACK_ATLAS.fence.bottom, TILE.fence);
+    push(outer, apronHeight + fence, TRACK_ATLAS.fence.top, TILE.fence);
+    strips.push([at, at + 1]);
+  }
 
   // 右の土手
-  push(outer, apronHeight, BAND.grassInner, TILE.grass);
-  push(outer + APRON_WIDTH, apronHeight, BAND.grassOuter, TILE.grass);
+  const apron = points.length;
+  push(outer, apronHeight, TRACK_ATLAS.grass.inner, TILE.grass);
+  push(outer + APRON_WIDTH, apronHeight, TRACK_ATLAS.grass.outer, TILE.grass);
+  strips.push([apron, apron + 1]);
 
-  // 連続して面を張る範囲。境目（同じ位置で u が飛ぶ点）は跨がない
-  const road = 8;
-  const last = road + roadSpans;
-  const strips = [
-    [0, 1], // 左の土手
-    [2, 3], // 左の壁
-    [4, 5], // 左の草地
-    [6, 7], // 左の縁石
-    [road, last], // 路面
-    [last + 1, last + 2], // 右の縁石
-    [last + 3, last + 4], // 右の草地
-    [last + 5, last + 6], // 右の壁
-    [last + 7, last + 8], // 右の土手
-  ];
   return { points, strips };
 }
 
@@ -147,6 +167,7 @@ function buildSector(lod, sector) {
   const totalSegments = lod.sectorCount * lod.segmentsPerSector;
   const step = TRACK.length / totalSegments;
   const firstRing = sector * lod.segmentsPerSector;
+  const columns = roadColumns(lod);
 
   const positions = [];
   const uvs = [];
@@ -156,7 +177,7 @@ function buildSector(lod, sector) {
   for (let ring = 0; ring <= lod.segmentsPerSector; ring++) {
     const s = (firstRing + ring) * step;
     const sample = TRACK.sampleAt(s);
-    const { points, strips } = crossSection(sample.halfWidth, lod.roadSpans);
+    const { points, strips } = crossSection(sample.halfWidth, columns, lod.fenceHeight);
     ringWidth = points.length;
 
     for (const point of points) {
@@ -193,81 +214,181 @@ function buildSector(lod, sector) {
 }
 
 /**
- * 路面アトラス。u 帯ごとに路面 / 縁石 / 草地を描き、v 方向はシームレスに繋がるようにする。
+ * 路面アトラス。u 帯ごとに路面 / 縁石 / 草地 / 壁 / 金網 / タイヤを描き、
+ * v 方向はシームレスに繋がるようにする。
  *
  * `wrap: 'repeat'` で登録し、u は帯の内側に収める。第4世代は linear フィルタなので
- * 帯の境界がにじむが、`BAND` が各帯の内側 1.5 % を空けてあり、メッシュの UV は
+ * 帯の境界がにじむが、`TRACK_ATLAS` が各帯の内側 0.012 を空けてあり、メッシュの UV は
  * そこまで届かない。ミップマップは使われないので、遠方で帯が混ざることも無い。
+ *
+ * **金網の帯だけはアルファを持つ。** 引くのは第4世代だけで、マテリアルの
+ * `alphaCutoff` が網目の穴を捨てる。他の帯は全画素不透明なので、
+ * 同じマテリアルで路面を描いても 1 画素も落ちない。
  */
-function buildSurfaceTexture(size) {
+function buildSurfaceTexture(size, fenceHeight) {
   const raster = new Raster(size, size);
   const band = (u) => Math.round(u * size);
+  /** 決定論的な粒（`Math.random` は使わない） */
+  const grain = (x, y, a, b) => ((x * a + y * b) % 11) - 5;
 
   // ── 路面: 暗いアスファルト＋外側の白線＋中央の破線
-  const roadFrom = band(0);
-  const roadTo = band(0.5);
+  const roadFrom = band(TRACK_ATLAS_SLOTS.road[0]);
+  const roadTo = band(TRACK_ATLAS_SLOTS.road[1]);
+  const roadWidth = roadTo - roadFrom;
   for (let y = 0; y < size; y++) {
     for (let x = roadFrom; x < roadTo; x++) {
-      // 決定論的な粒状ノイズ（Math.random は使わない）
-      const grain = ((x * 73 + y * 151) % 11) - 5;
-      raster.blend(x, y, [56 + grain, 58 + grain, 62 + grain], 1);
+      const noise = grain(x, y, 73, 151);
+      raster.blend(x, y, [56 + noise, 58 + noise, 62 + noise], 1);
     }
   }
-  const edge = Math.max(1, Math.round(size * 0.012));
+  const edge = Math.max(1, Math.round(roadWidth * 0.03));
   for (let y = 0; y < size; y++) {
     for (let offset = 0; offset < edge; offset++) {
-      raster.blend(roadFrom + Math.round(size * 0.02) + offset, y, [220, 220, 208], 1);
-      raster.blend(roadTo - Math.round(size * 0.02) - offset, y, [220, 220, 208], 1);
+      raster.blend(roadFrom + Math.round(roadWidth * 0.05) + offset, y, [220, 220, 208], 1);
+      raster.blend(roadTo - Math.round(roadWidth * 0.05) - offset, y, [220, 220, 208], 1);
     }
   }
-  const center = Math.round((roadFrom + roadTo) / 2);
-  for (let y = 0; y < size; y++) {
+  // 中央の破線は `TRACK_ATLAS.centerLine` の帯だけを塗る。**幅を texel で決めるのではなく
+  // 帯から引く**のが要で、メッシュ側は同じ帯の縁に頂点の列を置く（`roadColumns`）。
+  // 線の縁が頂点になっていれば、アフィン歪みで線が折れない（8-11）
+  const lineFrom = band(TRACK_ATLAS.centerLine.from);
+  const lineTo = band(TRACK_ATLAS.centerLine.to);
+  for (let y = 0; y < size / 2; y++) {
     // 1 タイル（8 m）につき前半だけ引く破線。速度感はこの流れで読む
-    if (y % size < size / 2) {
-      for (let offset = 0; offset < edge; offset++) {
-        raster.blend(center - Math.floor(edge / 2) + offset, y, [216, 216, 200], 1);
-      }
+    for (let x = lineFrom; x < lineTo; x++) {
+      raster.blend(x, y, [216, 216, 200], 1);
     }
   }
 
   // ── 縁石: 赤白の縞。1 タイル（4 m）に 4 本
-  const curbFrom = band(0.5);
-  const curbTo = band(0.7);
   for (let y = 0; y < size; y++) {
     const red = Math.floor((y / size) * 8) % 2 === 0;
     const color = red ? [196, 48, 40] : [232, 232, 224];
-    for (let x = curbFrom; x < curbTo; x++) raster.blend(x, y, color, 1);
+    for (let x = band(TRACK_ATLAS_SLOTS.curb[0]); x < band(TRACK_ATLAS_SLOTS.curb[1]); x++) {
+      raster.blend(x, y, color, 1);
+    }
   }
 
   // ── 草地: 濃い緑に粒
-  const grassFrom = band(0.7);
-  const grassTo = band(0.88);
   for (let y = 0; y < size; y++) {
-    for (let x = grassFrom; x < grassTo; x++) {
-      const grain = ((x * 37 + y * 89) % 13) - 6;
-      raster.blend(x, y, [40 + grain, 92 + grain * 2, 44 + grain], 1);
+    for (let x = band(TRACK_ATLAS_SLOTS.grass[0]); x < band(TRACK_ATLAS_SLOTS.grass[1]); x++) {
+      const noise = ((x * 37 + y * 89) % 13) - 6;
+      raster.blend(x, y, [40 + noise, 92 + noise * 2, 44 + noise], 1);
     }
   }
 
   // ── 壁（8-6）: コンクリートの面に、上端の赤白のライン。
   // u が縦方向（下端 → 上端）なので、u の大きいほうが壁の上になる
-  const wallFrom = band(0.88);
+  const wallFrom = band(TRACK_ATLAS_SLOTS.wall[0]);
+  const wallTo = band(TRACK_ATLAS_SLOTS.wall[1]);
   for (let y = 0; y < size; y++) {
-    for (let x = wallFrom; x < size; x++) {
-      const height = (x - wallFrom) / (size - wallFrom);
-      const grain = ((x * 53 + y * 101) % 9) - 4;
+    for (let x = wallFrom; x < wallTo; x++) {
+      const height = (x - wallFrom) / (wallTo - wallFrom);
+      const noise = grain(x, y, 53, 101);
       // 上端の 22 % は 4 m ごとの赤白のライン。壁の縁と距離感がここで読める
       const stripe = height > 0.78 && Math.floor((y / size) * 4) % 2 === 0;
       const color = stripe
         ? [188, 56, 48]
         : height > 0.78
           ? [224, 224, 216]
-          : [132 + grain, 134 + grain, 130 + grain];
+          : [132 + noise, 134 + noise, 130 + noise];
       raster.blend(x, y, color, 1);
     }
   }
 
+  // ── 金網（8-10）: 支柱・上下の胴縁・菱形の網。**ここだけ画素が抜ける**
+  paintFence(raster, size, fenceHeight);
+  // ── タイヤフェンス（8-10）: 積んだタイヤの弧に沿って引く帯
+  paintTyres(raster, size);
+
   return raster.toPng();
+}
+
+/**
+ * 金網フェンスの帯。u が高さ（下端 → 上端）、v が進行方向。
+ *
+ * **形を読ませるのは支柱と胴縁で、網は霞ませる。** 網目だけを細かく描くと、
+ * ミップマップの無い linear フィルタでは遠方が単なるちらつきになる（実機の
+ * 金網フェンスもそう見えていた）。4 m ごとの支柱と上下 2 本の胴縁は不透明な
+ * 直線なので距離が変わっても輪郭が残り、そこにトーンとしての網が乗る。
+ *
+ * `fenceHeight` が `null` の LOD（第3世代）では帯を空のまま残す。
+ * 引く面が 1 つも無いので、透明のままでも実害は無い。
+ */
+function paintFence(raster, size, fenceHeight) {
+  if (!fenceHeight) return;
+  const from = band01(TRACK_ATLAS_SLOTS.fence[0], size);
+  const to = band01(TRACK_ATLAS_SLOTS.fence[1], size);
+  /** 帯の 1 画素が受け持つ高さ [m] と、v 1 画素が受け持つ長さ [m] */
+  const metresPerU = fenceHeight / (to - from);
+  const metresPerV = TILE.fence / size;
+  /** 網目の対角の間隔 [m]。当時のフェンスの目合いより粗く採る（読めることを優先） */
+  const mesh = 0.22;
+
+  for (let x = from; x < to; x++) {
+    const height = (x - from) * metresPerU;
+    for (let y = 0; y < size; y++) {
+      const along = y * metresPerV;
+      // 支柱（4 m ごと・幅 0.12 m）と上下の胴縁
+      const post = along < 0.12 || along > TILE.fence - 0.06;
+      const rail = height < 0.08 || height > fenceHeight - 0.12;
+      if (post || rail) {
+        const noise = ((x * 29 + y * 61) % 7) - 3;
+        raster.blend(x, y, [148 + noise, 152 + noise, 156 + noise], 1);
+        continue;
+      }
+      // 菱形の網。2 本の対角線のどちらかに乗っている画素だけを残す。
+      // `fract` は格子までの距離なので、0 か 1 に近いほど線の上にある
+      const toDiagonal = (value) => Math.min(fract(value), 1 - fract(value));
+      const wire = Math.min(
+        toDiagonal((height + along) / mesh),
+        toDiagonal((height - along) / mesh),
+      );
+      if (wire < 0.1) raster.blend(x, y, [186, 190, 194], 1);
+    }
+  }
+}
+
+/**
+ * タイヤフェンスの帯。u はタイヤの弧に沿った位置（背面 → 頂点 → 背面）、v は進行方向。
+ *
+ * 1 タイル 2.8 m にタイヤ 4 本。継ぎ目の溝を 0.7 m ごとに落とし、
+ * **4 本に 1 本を白いタイヤ**にする（実車のタイヤバリアと同じで、これが無いと
+ * 帯がのっぺりして距離が読めない）。弧の頂点へ向かって明るくするので、
+ * 半円柱に貼ったときに丸みがそのまま出る（`build-scenery-mesh.mjs`）。
+ */
+function paintTyres(raster, size) {
+  const from = band01(TRACK_ATLAS_SLOTS.tyres[0], size);
+  const to = band01(TRACK_ATLAS_SLOTS.tyres[1], size);
+  /** 1 タイルに入るタイヤの本数 */
+  const perTile = Math.round(TILE.tyres / 0.7);
+
+  for (let x = from; x < to; x++) {
+    // 弧の中央（＝コース側の頂点）が最も明るい。ゴムなので反射は弱い
+    const along = (x - from) / (to - from);
+    const facing = 1 - Math.abs(along - 0.5) * 2;
+    for (let y = 0; y < size; y++) {
+      const tyre = (y / size) * perTile;
+      const index = Math.floor(tyre);
+      // 継ぎ目の溝。タイヤの縁は丸いので、溝へ向かって暗く落ちる
+      const seam = Math.abs(fract(tyre) - 0.5) * 2;
+      const round = Math.min(1, (1 - seam) * 3);
+      const noise = ((x * 41 + y * 97) % 9) - 4;
+      const pale = index % perTile === 2;
+      const base = pale ? 150 : 34;
+      const lift = pale ? 74 : 46;
+      const shade = (base + facing * lift + noise) * (0.35 + 0.65 * round);
+      raster.blend(x, y, [shade, shade, shade * 1.03], 1);
+    }
+  }
+}
+
+function band01(u, size) {
+  return Math.round(u * size);
+}
+
+function fract(value) {
+  return value - Math.floor(value);
 }
 
 function write(relativePath, buffer) {
@@ -297,7 +418,7 @@ for (const generation of GENERATION_IDS) {
   }
   const textureBytes = write(
     `public/${trackSurfaceTexture(lod)}`,
-    buildSurfaceTexture(lod.textureSize),
+    buildSurfaceTexture(lod.textureSize, lod.fenceHeight),
   );
 
   const drawn = Math.min(lod.sectorCount, lod.visibleRadius * 2 + 1);

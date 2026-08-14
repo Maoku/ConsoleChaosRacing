@@ -18,6 +18,12 @@ import {
   trackSurfaceTexture,
   visibleSectors,
 } from './shared/track-mesh.js';
+import {
+  tunnelAsset,
+  tunnelLampAsset,
+  tunnelTexture,
+  tunnelVisible,
+} from './shared/tunnel.js';
 import { ENTRANT_COLORS, PLAYER_ENTRANT } from './shared/variants.js';
 
 /**
@@ -54,6 +60,20 @@ const TRACK_GEOMETRY = { kind: 'quad', halfSize: [1, 1] } as const;
 
 /** 動的ライトが無いぶん、焼き込み風に明るめのマテリアルにする */
 const UNLIT = { ambient: 0.92, diffuse: 0.28 } as const;
+
+/**
+ * トンネルの躯体と灯具（実装計画 8-9）。
+ *
+ * **この世代に動的ライトは無い**（`dynamicLight: false` なので点光源は読まれない）。
+ * トンネルの暗さはマテリアルの `ambient` を落とすことだけで作る — 焼き込みの
+ * ライトマップしか持てなかった当時の作法そのもので、第4世代が照明そのものを
+ * 入れ替えるのと対になる。灯具だけは 1 を超える `ambient` で白く残す。
+ */
+const TUNNEL_UNLIT = { ambient: 0.44, diffuse: 0.16 } as const;
+const TUNNEL_LAMP_UNLIT = { ambient: 1.4, diffuse: 0 } as const;
+
+/** トンネルを積み始める距離 [m]。フォグが閉じる範囲に合わせる */
+const TUNNEL_DRAW_DISTANCE = 140;
 
 export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
   const { generation, profile, state, display } = context;
@@ -99,6 +119,50 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
       receiveShadow: true,
       generations: [generation],
     });
+  }
+
+  // ── トンネル（8-9）。第4世代と**同じ 1 つの表**から焼いた、この世代ぶんの躯体。
+  // 路面と同じ範囲へ三角形単位に分配するので、内壁と路面の前後が破綻しない
+  if (tunnelVisible(track, player.s, TUNNEL_DRAW_DISTANCE)) {
+    const structure: MaterialCommand = {
+      id: `tunnel-${generation}`,
+      baseColorTexture: tunnelTexture(lod),
+      uvMode: 'affine',
+      polygonSort: true,
+      ...TUNNEL_UNLIT,
+      generations: [generation],
+    };
+    const lamp: MaterialCommand = {
+      id: `tunnel-lamp-${generation}`,
+      baseColorTexture: tunnelTexture(lod),
+      uvMode: 'affine',
+      polygonSort: true,
+      ...TUNNEL_LAMP_UNLIT,
+      generations: [generation],
+    };
+    frame.materials.push(structure, lamp);
+    frame.meshes.push(
+      {
+        id: `tunnel-${generation}`,
+        geometry: TRACK_GEOMETRY,
+        asset: tunnelAsset(lod),
+        transform: { position: [0, 0, 0] },
+        color: '#ffffff',
+        material: structure.id,
+        polygonSortRange: TRACK_SORT_RANGE,
+        generations: [generation],
+      },
+      {
+        id: `tunnel-lamp-${generation}`,
+        geometry: TRACK_GEOMETRY,
+        asset: tunnelLampAsset(lod),
+        transform: { position: [0, 0, 0] },
+        color: '#ffffff',
+        material: lamp.id,
+        polygonSortRange: TRACK_SORT_RANGE,
+        generations: [generation],
+      },
+    );
   }
 
   // ── 車。塗装テクスチャは無彩色なので 8 台で 1 枚を共有し、

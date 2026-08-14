@@ -22,16 +22,53 @@ import type { SceneryKind, SceneryObject } from './scenery.js';
  */
 
 /** アトラスの形。`tools/build-scenery-sprites.mjs` と共有する */
-export const SCENERY_SPRITE_GEOMETRY = {
+export interface SceneryAtlasLayout {
+  readonly columns: number;
+  readonly rows: number;
+  /**
+   * 種類 → セル番号の候補。**候補が 2 つ以上あるとき、どれを引くかは `id` で決まる。**
+   * 乱数を使わないので、同じ木は何度描いても同じ絵になる（`scenery.ts` と同じ方針）。
+   */
+  readonly cells: Readonly<Record<SceneryKind, readonly number[]>>;
+}
+
+/**
+ * 3 セル 1 行。第1〜第3世代が共有する。
+ * 1 種類につき絵は 1 枚で、木は全部同じ形に見える。
+ */
+export const SCENERY_SPRITE_GEOMETRY: SceneryAtlasLayout = {
   columns: 3,
   rows: 1,
-  /** 種類 → セル番号 */
-  cells: { sign: 0, tree: 1, tyres: 2 } satisfies Record<SceneryKind, number>,
-} as const;
+  cells: { sign: [0], tree: [1], tyres: [2] },
+};
+
+/**
+ * 第4世代だけのアトラス（実装計画 8-10）。**3 × 2 の 6 セル**。
+ *
+ * 木を 3 種類（広葉樹 2 種・針葉樹 1 種）持ち、看板も 2 種類ある。
+ * 同じ 25 m 間隔で並んでいても、隣の木と形が違うので並木が「同じ絵の反復」に
+ * 見えない — 実画面で初版のいちばん目立った粗さがそれだった。
+ * セルは 256²（第3世代の 128² の 4 倍）で、幹と枝の分かれ目まで描く。
+ */
+export const SCENERY_BILLBOARD_GEOMETRY: SceneryAtlasLayout = {
+  columns: 3,
+  rows: 2,
+  cells: { sign: [0, 5], tree: [1, 3, 4], tyres: [2] },
+};
+
+/** その物が引くセル。候補が複数あるときは `id` で選ぶ */
+export function sceneryCell(layout: SceneryAtlasLayout, object: SceneryObject): number {
+  const cells = layout.cells[object.kind];
+  return cells[object.id % cells.length] ?? 0;
+}
 
 /**
  * 絵が表す世界の寸法 [m]。**セルいっぱいに焼く**ので、
- * ここの値がそのままスプライトの寸法になる（透明な余りが無いぶん式が 1 本で済む）。
+ * ここの値がそのままスプライトの縦横比になる（透明な余りが無いぶん式が 1 本で済む）。
+ *
+ * 実際の大きさは `SceneryObject.height` で決まり、幅はこの比から出す。
+ * **高さは 1 つの表（`scenery.ts`）から出る**ので、木の背丈がばらついていても
+ * 4 世代で同じ木が同じ背丈に描かれる。
  */
 export const SCENERY_ART: Record<SceneryKind, { width: number; height: number }> = {
   sign: { width: 3.2, height: 3.2 },
@@ -39,8 +76,16 @@ export const SCENERY_ART: Record<SceneryKind, { width: number; height: number }>
   tyres: { width: 4, height: 1.1 },
 };
 
+/** その物の世界での寸法 [m]。縦は表の値そのもの、横は絵の縦横比から */
+function artSize(object: SceneryObject): { width: number; height: number } {
+  const art = SCENERY_ART[object.kind];
+  return { width: (art.width * object.height) / art.height, height: object.height };
+}
+
 export interface ScenerySpriteAtlas {
   readonly url: string;
+  /** セルの並びと、種類ごとのセル候補 */
+  readonly layout: SceneryAtlasLayout;
   /** 1 セルの一辺 [px]。生成ツールだけが使う（解像度の上がる世代は大きく焼く） */
   readonly cellSize: number;
   /** その世代が出す種類。**FC は看板だけ**（8 スプライト/走査線のため） */
@@ -73,6 +118,7 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
   defineGenerationVariant({
     FC: {
       url: 'assets/gen1/sprites/scenery.png',
+      layout: SCENERY_SPRITE_GEOMETRY,
       cellSize: 128,
       // 走査線あたり 8 スプライトしか出せないので、種類を看板 1 つに絞る
       kinds: ['sign'],
@@ -83,6 +129,7 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
     },
     SFC: {
       url: 'assets/gen2/sprites/scenery.png',
+      layout: SCENERY_SPRITE_GEOMETRY,
       cellSize: 128,
       // 32 スプライト/走査線なので木とタイヤフェンスまで置ける
       kinds: ['sign', 'tree', 'tyres'],
@@ -107,6 +154,7 @@ export const SCENERY_BILLBOARDS: GenerationVariant<ScenerySpriteAtlas | null> =
     SFC: null,
     PS1: {
       url: 'assets/gen3/sprites/scenery.png',
+      layout: SCENERY_SPRITE_GEOMETRY,
       cellSize: 128,
       kinds: ['tree'],
       drawDistance: 100,
@@ -116,8 +164,12 @@ export const SCENERY_BILLBOARDS: GenerationVariant<ScenerySpriteAtlas | null> =
     },
     PS2: {
       url: 'assets/gen4/sprites/scenery.png',
+      // 6 セル。木 3 種・看板 2 種を持つのはこの世代だけ（8-10）
+      layout: SCENERY_BILLBOARD_GEOMETRY,
       cellSize: 256,
-      kinds: ['tree'],
+      // 看板も出す。**4 世代で同じ場所に同じ看板が立つ**という 8-6 の主張は、
+      // 出していない世代があるうちは絵として確かめられない
+      kinds: ['sign', 'tree'],
       drawDistance: 280,
       // 280 m ぶんを全部積むとドローコールが 240 の予算を超えた（実測 245）。
       // 120 m より遠い木を 1 つおきにする。フォグが 8 割の距離なので見た目は変わらない
@@ -152,6 +204,11 @@ export interface ScenerySpriteOptions {
   readonly track: Track;
   readonly objects: readonly SceneryObject[];
   readonly atlas: ScenerySpriteAtlas;
+  /**
+   * これより遠い物を描かない [m]。省略すると `atlas.drawDistance` と視界の遠い方で切る。
+   * トンネルの坑口の壁で視界が塞がれるときに、その距離が渡ってくる（8-9）。
+   */
+  readonly farClip?: number;
 }
 
 /**
@@ -164,7 +221,11 @@ export function sceneryPlacements(
   const { generation, profile, view, track, atlas } = options;
   const snap = Math.max(1, profile.video.tileSnap);
   const nearClip = view.camera.behind * 0.6;
-  const farClip = Math.min(atlas.drawDistance, view.maxDistance);
+  const farClip = Math.min(
+    atlas.drawDistance,
+    view.maxDistance,
+    options.farClip ?? Number.POSITIVE_INFINITY,
+  );
   const placements: ScenerySpritePlacement[] = [];
 
   for (const object of options.objects) {
@@ -172,7 +233,7 @@ export function sceneryPlacements(
     const distance = track.deltaS(object.s, view.originS);
     if (distance < nearClip || distance > farClip) continue;
 
-    const art = SCENERY_ART[object.kind];
+    const art = artSize(object);
     const scale = view.scaleAt(distance);
     const width = art.width * scale;
     const height = art.height * scale;
@@ -195,7 +256,7 @@ export function sceneryPlacements(
         size: [width, height],
         color: atlas.color,
         texture: atlas.url,
-        cell: SCENERY_SPRITE_GEOMETRY.cells[object.kind],
+        cell: sceneryCell(atlas.layout, object),
         alphaCutoff: 0.5,
         // 車（20）より奥。半透明は 1 つも付けない（FC の能力契約）
         layer: 18,
@@ -249,14 +310,14 @@ export function sceneryBillboards(options: SceneryBillboardOptions): SpriteComma
     // 木が「入れ替わる」ようなちらつきは起きない
     if (atlas.thinBeyond !== undefined && away > atlas.thinBeyond && object.id % 2 === 1) continue;
 
-    const art = SCENERY_ART[object.kind];
+    const art = artSize(object);
     sprites.push({
       id: `scenery-${generation}-${object.id}`,
       position: [ground[0], ground[1] + art.height / 2, ground[2]],
       size: [art.width, art.height],
       color: atlas.color,
       texture: atlas.url,
-      cell: SCENERY_SPRITE_GEOMETRY.cells[object.kind],
+      cell: sceneryCell(atlas.layout, object),
       billboard: 'cylindrical',
       alphaCutoff: 0.5,
       ...(options.depthWrite === undefined ? {} : { depthWrite: options.depthWrite }),

@@ -89,6 +89,29 @@ export function rgb01(hex: string): [number, number, number] {
   ];
 }
 
+/** 数値の線形補間。トンネルの出入りで照明を混ぜるのに使う（8-9） */
+export function mixNumber(from: number, to: number, t: number): number {
+  const k = Math.min(1, Math.max(0, t));
+  return from + (to - from) * k;
+}
+
+/**
+ * `'#rrggbb'` どうしの線形補間。
+ *
+ * **色を混ぜるのはコマンドを積む前だけ**にする。レンダラーへ渡す時点では
+ * いつもどおりの 1 つの色であり、「混ぜている最中」という状態はどこにも残らない。
+ */
+export function mixColor(from: string, to: string, t: number): string {
+  const channel = (offset: number) => {
+    const a = Number.parseInt(from.slice(offset, offset + 2), 16);
+    const b = Number.parseInt(to.slice(offset, offset + 2), 16);
+    return Math.round(mixNumber(a, b, t))
+      .toString(16)
+      .padStart(2, '0');
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
 export function profileOf(generation: GenerationId): HardwareGenerationProfile {
   return HARDWARE_GENERATION_PROFILES[generation];
 }
