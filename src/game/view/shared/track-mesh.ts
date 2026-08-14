@@ -141,8 +141,22 @@ export function trackMeshLodFor(generation: GenerationId): TrackMeshLod | null {
 }
 
 /**
+ * 中央の破線の外側へ置く緩衝帯の幅。**帯の幅と同じだけ取る**（8-11）。
+ *
+ * 近クリップで作られる頂点は `uv*w` を線形補間して得るが、`uv*w` は辺に沿って二次なので
+ * 誤差 `t(1−t)·Δu·Δw / w` が乗る。**この誤差は四角形の Δu に比例する**ので、
+ * 破線に隣り合う四角形が広いほど大きく食い込む（実測：幅 0.058 の四角形が
+ * 自分の u 範囲から 0.00695 ＝ 1.8 texel はみ出し、破線の texel を引いて楔になった）。
+ *
+ * 緩衝帯を挟むと 2 つとも効く。
+ * - 広い四角形は帯から `CENTER_LINE_GUARD` だけ離れるので、はみ出しても届かない
+ * - 緩衝帯自身は Δu が帯と同じだけなので、はみ出しも帯と同じ 0.36 texel まで落ちる
+ */
+const CENTER_LINE_GUARD = TRACK_ATLAS.centerLine.to - TRACK_ATLAS.centerLine.from;
+
+/**
  * 路面を横に割る列の位置 t（0 ＝ 左端 / 1 ＝ 右端）。**`roadSpans` の等分に加えて、
- * 中央の破線の両縁を必ず列にする**（8-11）。
+ * 中央の破線の両縁と、その外側の緩衝帯を列にする**（8-11）。
  *
  * 等分だけで割ると、破線は四角形の境目（`roadSpans` が偶数なら t = 0.5）に跨がる。
  * アフィンテクスチャの u は三角形ごとに別々の傾きで補間されるので、跨いだ線は
@@ -154,23 +168,30 @@ export function trackMeshLodFor(generation: GenerationId): TrackMeshLod | null {
  * 縁が折れることは無い。縦（v）方向の歪み ＝ 破線の伸び縮みは残るので、
  * 「アフィン歪みを打ち消さない」という第3世代の設計はそのまま。
  *
- * 増えるのは 1 輪あたり四角形 1 つ（＝三角形 2 つ）だけ。第4世代は
- * パースペクティブ補正が効くので元から折れないが、**同じ断面から焼く**ため列も揃える。
+ * **縁を列にするだけでは足りない**（実画面で残った）。カメラの後ろへ回った輪では
+ * 近クリップが隣の四角形の u を帯まで押し込むので、`CENTER_LINE_GUARD` の緩衝帯を
+ * 外側へ 1 つずつ挟む。理由と実測はその定数のコメントにある。
+ *
+ * 増えるのは 1 輪あたり四角形 3 つ（＝三角形 6 つ）。第4世代は
+ * パースペクティブ補正が効くので元から崩れないが、**同じ断面から焼く**ため列も揃える。
  *
  * **`tools/build-track-mesh.mjs` と `tests/track-mesh.spec.ts` が共有する。**
  */
 export function roadColumns(lod: TrackMeshLod): number[] {
   const width = TRACK_ATLAS.road.to - TRACK_ATLAS.road.from;
-  const from = (TRACK_ATLAS.centerLine.from - TRACK_ATLAS.road.from) / width;
-  const to = (TRACK_ATLAS.centerLine.to - TRACK_ATLAS.road.from) / width;
+  const at = (u: number) => (u - TRACK_ATLAS.road.from) / width;
+  const from = at(TRACK_ATLAS.centerLine.from);
+  const to = at(TRACK_ATLAS.centerLine.to);
+  const guardFrom = at(TRACK_ATLAS.centerLine.from - CENTER_LINE_GUARD);
+  const guardTo = at(TRACK_ATLAS.centerLine.to + CENTER_LINE_GUARD);
   const columns: number[] = [];
   for (let span = 0; span <= lod.roadSpans; span++) {
     const t = span / lod.roadSpans;
-    // 帯の中（と縁そのもの）に落ちる等分点は捨てる。幅 0 の四角形を作らないため
-    if (t >= from && t <= to) continue;
+    // 緩衝帯の中（と縁そのもの）に落ちる等分点は捨てる。幅 0 の四角形を作らないため
+    if (t >= guardFrom && t <= guardTo) continue;
     columns.push(t);
   }
-  columns.push(from, to);
+  columns.push(guardFrom, from, to, guardTo);
   columns.sort((left, right) => left - right);
   return columns;
 }

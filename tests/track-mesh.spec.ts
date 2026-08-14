@@ -61,7 +61,7 @@ function sideColumns(lod: TrackMeshLod): number {
   return lod.fenceHeight === null ? 8 : 10;
 }
 
-/** 路面の列数。等分 (`roadSpans` + 1) ＋ 中央の破線の両縁（8-11） */
+/** 路面の列数。等分 (`roadSpans` + 1) ＋ 中央の破線の両縁と緩衝帯（8-11） */
 function roadColumnCount(lod: TrackMeshLod): number {
   return roadColumns(lod).length;
 }
@@ -305,8 +305,22 @@ describe('コースメッシュ', () => {
               u > TRACK_ATLAS.centerLine.from + 1e-6 && u < TRACK_ATLAS.centerLine.to - 1e-6,
           ),
         ).toEqual([]);
-        // 帯は路面の中に収まり、路面の中心に乗っている（幅の 1 % 以内）
+        // 帯の外側には緩衝帯の列がある（8-11）。近クリップは隣の四角形の u を
+        // その Δu に比例して押し出すので、広い四角形を帯から離しておかないと
+        // アスファルトの四角形が破線の texel を引いて楔になる
+        const guard = TRACK_ATLAS.centerLine.to - TRACK_ATLAS.centerLine.from;
+        expect(at(TRACK_ATLAS.centerLine.from - guard), '左の緩衝帯が無い').toBe(true);
+        expect(at(TRACK_ATLAS.centerLine.to + guard), '右の緩衝帯が無い').toBe(true);
+        // 帯に隣り合う四角形は緩衝帯ぶんの幅しか持たない
         const road = TRACK_ATLAS.road;
+        const sorted = [...columns].sort((left, right) => left - right);
+        const leftNeighbour = sorted.filter((u) => u < TRACK_ATLAS.centerLine.from - 1e-9);
+        const rightNeighbour = sorted.filter((u) => u > TRACK_ATLAS.centerLine.to + 1e-9);
+        expect(
+          TRACK_ATLAS.centerLine.from - leftNeighbour[leftNeighbour.length - 1]!,
+        ).toBeCloseTo(guard, 9);
+        expect(rightNeighbour[0]! - TRACK_ATLAS.centerLine.to).toBeCloseTo(guard, 9);
+
         expect(TRACK_ATLAS.centerLine.from).toBeGreaterThan(road.from);
         expect(TRACK_ATLAS.centerLine.to).toBeLessThan(road.to);
         const middle = (TRACK_ATLAS.centerLine.from + TRACK_ATLAS.centerLine.to) / 2;
