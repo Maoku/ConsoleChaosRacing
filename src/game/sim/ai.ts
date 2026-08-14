@@ -1,6 +1,12 @@
 import type { CarState, RaceState } from './state.js';
 import type { Track } from './track.js';
-import { VEHICLE, cornerSpeedLimit, gripAccel, yawAuthority, type VehicleControl } from './vehicle.js';
+import {
+  VEHICLE,
+  cornerSpeedLimit,
+  gripAccel,
+  steeringLimits,
+  type VehicleControl,
+} from './vehicle.js';
 
 /**
  * AI ドライバ（実装計画 §5.3）。
@@ -56,7 +62,7 @@ function racingLineAt(track: Track, s: number, bias: number): number {
 function targetSpeedFor(track: Track, car: CarState): number {
   // 路外に出ていても「本来のライン」を基準に計画する。路外のグリップで計画すると
   // 草地で止まってしまい、コースへ戻れなくなる（罰は物理側が与える）
-  const grip = gripAccel(false) * AI.CORNER_SAFETY;
+  const grip = gripAccel(0) * AI.CORNER_SAFETY;
   let target: number = VEHICLE.MAX_SPEED;
   for (let distance = 0; distance <= AI.SCAN_MAX; distance += AI.SCAN_STEP) {
     const sample = track.sampleAt(car.s + distance);
@@ -136,10 +142,15 @@ function steerToward(track: Track, car: CarState, targetLateral: number): number
   // コース接線に追従するぶん（-κv）＋ 目標ヨー角へ寄せるぶん
   const desiredYawRate =
     -sample.curvature * car.speed + (desiredYaw - car.yaw) * AI.YAW_GAIN;
-  const grip = gripAccel(car.offTrack);
-  const authority = yawAuthority(car.speed, grip);
-  if (authority < 1e-4) return 0;
+  // 路外の手心（戻り舵のグリップ）も含めた限界。`stepVehicle` と同じ関数を通す
+  const limits = steeringLimits(
+    car.speed,
+    car.lateral,
+    sample.halfWidth,
+    Math.sign(desiredYawRate),
+  );
+  if (limits.authority < 1e-4) return 0;
   // グリップを超える舵は切らない（AI は自分から滑らせない）
-  const gripYawRate = car.speed > 0.5 ? grip / car.speed : authority;
-  return clamp(clamp(desiredYawRate, -gripYawRate, gripYawRate) / authority, -1, 1);
+  const held = clamp(desiredYawRate, -limits.gripYawRate, limits.gripYawRate);
+  return clamp(held / limits.authority, -1, 1);
 }

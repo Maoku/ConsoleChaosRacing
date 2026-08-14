@@ -30,10 +30,16 @@ export const VEHICLE = {
   COAST_DRAG: 3,
   /** 路面のグリップが許す横加速度 [m/s²] */
   GRIP_ACCEL: 15,
-  /** 路外のグリップ倍率 */
+  /** 路外のグリップ倍率（草地の奥＝罰が最大のとき） */
   OFF_TRACK_GRIP: 0.45,
-  /** 路外の追加抵抗 [m/s²] */
-  OFF_TRACK_DRAG: 9,
+  /** 路外の追加抵抗 [m/s²]（同上） */
+  OFF_TRACK_DRAG: 8,
+  /** 罰が最大になる路外の深さ [m]。縁を割った直後の罰は浅い */
+  OFF_TRACK_FULL_DEPTH: 3,
+  /** 縁を割った瞬間の罰（0..1）。ここから深さに応じて 1 まで上がる */
+  OFF_TRACK_MIN_SEVERITY: 0.3,
+  /** 路面の側へ切った舵に返すグリップ倍率。路外でも「戻る意思」だけは通る */
+  RECOVERY_GRIP: 0.85,
   /** 最大ヨー角速度 [rad/s] */
   MAX_YAW_RATE: 1.6,
   /** ヨーの効きが半分になる速度 [m/s]。低速では舵が効かない */
@@ -52,8 +58,12 @@ export const VEHICLE = {
   SCRUB: 0.55,
   /** 路面外側の走行可能域（草地）[m] */
   RUNOFF: 9,
-  /** 壁に当たったあとの速度上限 [m/s] */
-  WALL_SPEED: 14,
+  /** 壁から内側へ戻す量 [m]。壁に貼り付いたままにしない */
+  WALL_BOUNCE: 0.4,
+  /** 壁に当たったとき、外向きの横速度 1 m/s あたり削る速度 [m/s] */
+  WALL_BITE: 1.8,
+  /** 壁が殺す外向きヨーの残り */
+  WALL_YAW_KILL: 0.25,
 } as const;
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -64,18 +74,77 @@ function clamp(value: number, minimum: number, maximum: number): number {
  * その速度で出せる最大ヨー角速度 [rad/s]。
  *
  * 低速では舵が効かず（車が動いていないと向きは変わらない）、
- * 高速ではグリップが頭を押さえる。上限をグリップの `OVERSTEER_FACTOR` 倍に留めるので、
- * 「限界より 35% 速い」までしか無理は利かない。
+ * 高速ではグリップが頭を押さえる。上限をグリップの `overshoot` 倍に留めるので、
+ * 既定の `OVERSTEER_FACTOR` では「限界より 35% 速い」までしか無理は利かない。
+ * 路外では `overshoot` に 1 を渡す（理由は下記 `steeringLimits`）。
  */
-export function yawAuthority(speed: number, grip: number = VEHICLE.GRIP_ACCEL): number {
+export function yawAuthority(
+  speed: number,
+  grip: number = VEHICLE.GRIP_ACCEL,
+  overshoot: number = VEHICLE.OVERSTEER_FACTOR,
+): number {
   const steering = (VEHICLE.MAX_YAW_RATE * speed) / (speed + VEHICLE.YAW_SPEED_REF);
-  const gripLimited = (VEHICLE.OVERSTEER_FACTOR * grip) / Math.max(speed, 8);
+  const gripLimited = (overshoot * grip) / Math.max(speed, 8);
   return Math.min(steering, gripLimited);
 }
 
-/** 路面状態に応じたグリップ [m/s²] */
-export function gripAccel(offTrack: boolean): number {
-  return offTrack ? VEHICLE.GRIP_ACCEL * VEHICLE.OFF_TRACK_GRIP : VEHICLE.GRIP_ACCEL;
+/**
+ * 路外の罰の強さ 0..1。路面上は 0。
+ *
+ * 縁を割った瞬間に最大の罰を与えると、わずかにはみ出しただけでレースが終わる。
+ * `OFF_TRACK_MIN_SEVERITY` から始めて `OFF_TRACK_FULL_DEPTH` で 1 に達する
+ * 一次の傾斜にしてあるので、**浅いミスは浅く、深いミスは深く**罰が掛かる。
+ */
+export function offTrackSeverity(lateral: number, halfWidth: number): number {
+  const depth = Math.abs(lateral) - halfWidth;
+  if (depth <= 0) return 0;
+  const ramp = clamp(depth / VEHICLE.OFF_TRACK_FULL_DEPTH, 0, 1);
+  return VEHICLE.OFF_TRACK_MIN_SEVERITY + (1 - VEHICLE.OFF_TRACK_MIN_SEVERITY) * ramp;
+}
+
+/** 罰の強さに応じたグリップ [m/s²]。`severity` は `offTrackSeverity()` の値 */
+export function gripAccel(severity: number): number {
+  const scale = 1 - (1 - VEHICLE.OFF_TRACK_GRIP) * clamp(severity, 0, 1);
+  return VEHICLE.GRIP_ACCEL * scale;
+}
+
+export interface SteeringLimits {
+  /** この舵に効くグリップ [m/s²] */
+  readonly grip: number;
+  /** 出せる最大ヨー角速度 [rad/s] */
+  readonly authority: number;
+  /** グリップが許すヨー角速度 [rad/s]。これを超えた要求は横滑りになる */
+  readonly gripYawRate: number;
+}
+
+/**
+ * その舵に効く限界。**`stepVehicle` と AI が同じこの関数を通る**ので、
+ * AI が「切ったつもりの舵」と実際の効きが食い違わない。
+ *
+ * 路外では 2 つの手心が入る（どちらも速度には触れない ＝ 減速の罰は残る）:
+ *
+ * 1. **戻り舵にだけグリップを返す**（`RECOVERY_GRIP`）。草地の 0.45 倍のままだと、
+ *    舵を切っても向きが変わる前に流されて戻れない
+ * 2. **無理な舵を許さない**（`overshoot` = 1）。要求がグリップ上限を超えると
+ *    その差が横滑りになって**外へ**押し出す。戻ろうとするほど外へ出る、という
+ *    逆向きの力が壁ぎわでは支配的だった
+ *
+ * @param steerDirection 舵の符号（右が正）。0 なら手心は掛からない
+ */
+export function steeringLimits(
+  speed: number,
+  lateral: number,
+  halfWidth: number,
+  steerDirection: number,
+): SteeringLimits {
+  const severity = offTrackSeverity(lateral, halfWidth);
+  const towardTrack = lateral > 0 ? -1 : lateral < 0 ? 1 : 0;
+  const recovering = severity > 0 && steerDirection * towardTrack > 0;
+  const grip = recovering
+    ? Math.max(gripAccel(severity), VEHICLE.GRIP_ACCEL * VEHICLE.RECOVERY_GRIP)
+    : gripAccel(severity);
+  const authority = yawAuthority(speed, grip, severity > 0 ? 1 : VEHICLE.OVERSTEER_FACTOR);
+  return { grip, authority, gripYawRate: speed > 0.5 ? grip / speed : authority };
 }
 
 /** 曲率 κ のコーナーを曲がりきれる最大速度 [m/s] */
@@ -100,6 +169,7 @@ export function stepVehicle(
 ): void {
   const sample = track.sampleAt(car.s);
   const previousSpeed = car.speed;
+  const severity = offTrackSeverity(car.lateral, sample.halfWidth);
 
   const steer = clamp(control.steer, -1, 1);
   const throttle = clamp(control.throttle, 0, 1);
@@ -118,7 +188,7 @@ export function stepVehicle(
   } else {
     acceleration = -VEHICLE.COAST_DRAG;
   }
-  if (car.offTrack) acceleration -= VEHICLE.OFF_TRACK_DRAG;
+  acceleration -= VEHICLE.OFF_TRACK_DRAG * severity;
 
   // バンクは坂と同じで、上り勾配ぶんの減速になる（第3・第4世代の起伏が走りに出る）
   const slope = -Math.sin(Math.atan(gradientAt(track, car.s))) * 9.81;
@@ -126,12 +196,10 @@ export function stepVehicle(
 
   car.speed = Math.max(0, car.speed + acceleration * dt);
 
-  // ── 操舵: 要求ヨー角速度をグリップで頭打ちにする
-  const grip = gripAccel(car.offTrack);
-  const authority = yawAuthority(car.speed, grip);
-  const demandedYawRate = steer * authority;
-  const gripYawRate = car.speed > 0.5 ? grip / car.speed : authority;
-  const yawRate = clamp(demandedYawRate, -gripYawRate, gripYawRate);
+  // ── 操舵: 要求ヨー角速度をグリップで頭打ちにする（路外の手心は `steeringLimits`）
+  const limits = steeringLimits(car.speed, car.lateral, sample.halfWidth, Math.sign(steer));
+  const demandedYawRate = steer * limits.authority;
+  const yawRate = clamp(demandedYawRate, -limits.gripYawRate, limits.gripYawRate);
   const unmetYawRate = demandedYawRate - yawRate;
 
   // ── ヨー角（コース接線に対する相対角）
@@ -141,8 +209,9 @@ export function stepVehicle(
 
   // ── 位置。滑りは曲がりきれなかったぶんだけ外へ出る
   const slide = -unmetYawRate * car.speed * VEHICLE.SLIDE_TIME;
+  const lateralVelocity = car.speed * Math.sin(car.yaw) + slide;
   car.s = track.wrapS(car.s + advance * dt);
-  car.lateral += (car.speed * Math.sin(car.yaw) + slide) * dt;
+  car.lateral += lateralVelocity * dt;
 
   // ── タイヤの引きずりで速度が落ちる
   const scrub = (Math.abs(car.yaw) + Math.abs(unmetYawRate) * 0.5) * VEHICLE.SCRUB;
@@ -154,10 +223,18 @@ export function stepVehicle(
   const limit = currentSample.halfWidth + VEHICLE.RUNOFF;
   car.hitWall = false;
   if (Math.abs(car.lateral) > limit) {
-    car.lateral = car.lateral > 0 ? limit : -limit;
-    car.yaw *= 0.3;
+    // 壁は**外向きの運動だけ**を吸う。以前は当たるたびに位置を壁ちょうどへ留め、
+    // ヨーを向きに関わらず 0.3 倍にし、速度を 14 m/s で頭打ちにしていた。
+    // これだと内向きの舵でヨーが育たず、上の `slide` が外向きに勝って
+    // **壁から永久に離れられない**（全開＋フル戻り舵で 30 秒たっても復帰しない）。
+    const side = car.lateral > 0 ? 1 : -1;
+    car.lateral = side * (limit - VEHICLE.WALL_BOUNCE);
+    // 外を向いたヨーは殺すが、内を向いたヨー ＝ 復帰の意思はそのまま残す
+    if (car.yaw * side > 0) car.yaw *= VEHICLE.WALL_YAW_KILL;
+    // 速度の罰は当たりの強さに比例させる。掠っただけならほとんど削らない
+    const outward = Math.max(0, lateralVelocity * side);
+    car.speed = Math.max(0, car.speed - outward * VEHICLE.WALL_BITE);
     car.hitWall = true;
-    car.speed = Math.min(car.speed, VEHICLE.WALL_SPEED);
   }
 
   car.lateralAccel = car.speed * yawRate;
