@@ -18,11 +18,9 @@ import {
   createRoadView,
   roadTopRowForDistance,
 } from '../src/game/view/shared/projection.js';
-import {
-  patternPeriodMeters,
-  roadSurfaceFor,
-  type RoadSurfaceLayout,
-} from '../src/game/view/shared/road-surface.js';
+import { roadSurfaceFor, type RoadSurfaceLayout } from '../src/game/view/shared/road-surface.js';
+import { TRACK } from '../src/game/sim/track.js';
+import { SFC_ROAD_MAP, roadMapProjection } from '../src/game/view/shared/road-map.js';
 import { buildFrame, raceAfter } from './support/frame.js';
 
 /**
@@ -44,16 +42,28 @@ const RESOLUTION: readonly [number, number] = [
 /** コース 1 周をまんべんなく見るための地点。カーブ・勾配・ヘアピンを跨ぐ */
 const MOMENTS = [60, 400, 900, 1500, 2400, 3600, 5200, 7000];
 
-function viewAt(ticks: number) {
+const PROJECTION = roadMapProjection(TRACK.bounds, SFC_ROAD_MAP);
+
+function viewAt(ticks: number, s?: number) {
   const state = raceAfter(ticks);
+  const car = state.cars[0]!;
   return createRoadView({
     profile: PROFILE,
     camera: SFC_CAMERA,
     track: state.track,
-    car: state.cars[0]!,
+    car: s === undefined ? car : { ...car, s, lateral: 0 },
     layout: LAYOUT,
     maxDistance: SFC_DRAW_DISTANCE,
   });
+}
+
+/** 帯が画面 x 列で引いているワールド XZ。UV を世界へ戻す */
+function worldAt(band: AffineSurfaceCommand, x: number): [number, number] {
+  const [u, v] = rawUv(band, x);
+  return [
+    PROJECTION.originX + (u * PROJECTION.width) / SFC_ROAD_MAP.texelsPerMeter,
+    PROJECTION.originZ + (v * PROJECTION.height) / SFC_ROAD_MAP.texelsPerMeter,
+  ];
 }
 
 /** clamp を掛ける前の生の UV。範囲外へ出たかどうかを見たいのでこちらを使う */
@@ -94,35 +104,43 @@ describe('第2世代のアフィンサーフェス', () => {
     expect(SFC_DRAW_DISTANCE).toBeGreaterThan(fcMaxDistance * 2);
   });
 
-  describe('投影と UV の一致（affineUvAt との突き合わせ）', () => {
-    it('路面の中心と両端が、テクスチャの路面の中心と両端を引く', () => {
+  describe('投影と UV の一致（マップの上で確かめる）', () => {
+    it('画面の各点が、その点が見ているワールド上の地面を引く', () => {
+      // マップの UV はワールド XZ の写像なので、**引いた UV を世界へ戻して
+      // コース座標に直せる**。投影（RoadView）と UV が同じ地面を指しているかを、
+      // テクスチャの割合ではなく実寸で確かめられる
       const view = viewAt(900);
-      const bands = affineRoadBands({ generation: 'SFC', view });
-      const halfRoad = LAYOUT.roadHalfWidth / LAYOUT.spanMeters;
+      const bands = affineRoadBands({ generation: 'SFC', view, track: TRACK });
+      let near = 0;
+      let far = 0;
 
       for (const band of bands) {
-        const distance = view.distanceAtRow(band.screenRect[1] + band.screenRect[3] / 2);
-        // 傾いた行は路面の横方向が画面の横方向と一致しないので、直線に近い行だけを見る
-        if (Math.abs(view.headingDeltaAt(distance)) > 0.02) continue;
+        const distance = Math.min(
+          SFC_ROAD_MAP.farClip,
+          view.distanceAtRow(band.screenRect[1] + band.screenRect[3] / 2),
+        );
         const scale = view.scaleAt(distance);
-
-        for (const [lateral, expectedU] of [
-          [0, 0.5],
-          [-LAYOUT.roadHalfWidth, 0.5 - halfRoad],
-          [LAYOUT.roadHalfWidth, 0.5 + halfRoad],
-        ] as const) {
+        for (const lateral of [-LAYOUT.roadHalfWidth, 0, LAYOUT.roadHalfWidth]) {
           const x = view.centerXAt(distance) + lateral * scale;
-          const [u] = rawUv(band, x);
-          // 許容は U の 1e-4（＝路面の実寸で 1 cm）。傾きが厳密に 0 でない行では
-          // cos φ ぶんのわずかな差が残る
-          expect(u, `距離 ${distance.toFixed(1)} m・横 ${lateral} m`).toBeCloseTo(expectedU, 4);
+          const [worldX, worldZ] = worldAt(band, x);
+          const location = TRACK.toTrack(worldX, worldZ, view.originS + distance);
+          const error = Math.abs(location.lateral - lateral);
+          near = Math.max(near, error / (distance * distance));
+          far = Math.max(far, error);
         }
       }
+
+      // ずれは距離の 2 乗に比例する。`centerXAt` が「弧長 z 先の中心線」を置くのに対し
+      // マップは「カメラから直線距離 z の点」を引くためで、係数はコースの曲率そのもの。
+      // **投影の側の近似であって UV の導出の誤差ではない** — 定数項が乗っていたら導出が疑わしい
+      expect(near).toBeLessThan(3e-5);
+      // 実寸では最遠でも 1 m 未満（画面では 1.4 px）
+      expect(far).toBeLessThan(1);
     });
 
     it('affineUvAt（レンダラーの CPU 参照）が同じ値を返す', () => {
       const view = viewAt(1500);
-      const bands = affineRoadBands({ generation: 'SFC', view });
+      const bands = affineRoadBands({ generation: 'SFC', view, track: TRACK });
 
       for (const band of bands) {
         for (const x of [0.5, 64.5, 128.5, 255.5]) {
@@ -134,71 +152,85 @@ describe('第2世代のアフィンサーフェス', () => {
       }
     });
 
-    it('V の位相が進行距離に対応する（模様の 1 周期の剰余で一致）', () => {
-      const view = viewAt(400);
-      const bands = affineRoadBands({ generation: 'SFC', view });
-      const pattern = patternPeriodMeters(LAYOUT);
-      const patternV = pattern / LAYOUT.periodMeters;
+    it('行が見る距離が遠クリップで止まる（窓に収める条件）', () => {
+      // 下り坂では最上行が 358 m 先まで見る。マップを引く距離だけ止めないと、
+      // 1 フレームで引く地面が実機の Mode 7 面（1024²）に収まらない
+      for (const ticks of MOMENTS) {
+        const state = raceAfter(ticks);
+        const view = createRoadView({
+          profile: PROFILE,
+          camera: SFC_CAMERA,
+          track: state.track,
+          car: state.cars[0]!,
+          layout: LAYOUT,
+          maxDistance: SFC_DRAW_DISTANCE,
+        });
+        const bands = affineRoadBands({ generation: 'SFC', view, track: state.track });
+        const eye = state.track.toWorld(view.originS, view.originLateral);
+        for (const band of bands) {
+          const [worldX, worldZ] = worldAt(band, PROFILE.video.internalWidth / 2);
+          const distance = Math.hypot(worldX - eye[0], worldZ - eye[2]);
+          expect(distance, `tick ${ticks} 行 ${band.screenRect[1]}`).toBeLessThanOrEqual(
+            SFC_ROAD_MAP.farClip + 1e-6,
+          );
+        }
+      }
+    });
+  });
+
+  describe('コーナーで視界が回る（マップ参照の本題）', () => {
+    it('画面の横方向がワールドの右方向と一致する', () => {
+      // 帯テクスチャでは「傾き」は上限を掛けた演出だった。マップでは
+      // uvStepX がそのまま視点の right ベクトルなので、演出の余地が無い
+      const view = viewAt(1500);
+      const bands = affineRoadBands({ generation: 'SFC', view, track: TRACK });
+      const [rightX, rightZ] = TRACK.sampleAt(view.originS).right;
 
       for (const band of bands) {
-        const distance = view.distanceAtRow(band.screenRect[1] + band.screenRect[3] / 2);
-        const [, v] = rawUv(band, PROFILE.video.internalWidth / 2);
-        const along = (view.originS + distance) / pattern;
-        const expected = (along - Math.floor(along)) * patternV;
-        // 1 周期ずらしても同じ絵になるので、剰余で比べる
-        const difference = (((v - expected) / patternV) % 1 + 1) % 1;
-        expect(Math.min(difference, 1 - difference)).toBeLessThan(1e-6);
+        const [stepX, stepZ] = [
+          (band.uvStepX[0] * PROJECTION.width) / SFC_ROAD_MAP.texelsPerMeter,
+          (band.uvStepX[1] * PROJECTION.height) / SFC_ROAD_MAP.texelsPerMeter,
+        ];
+        const length = Math.hypot(stepX, stepZ);
+        expect(stepX / length).toBeCloseTo(rightX, 6);
+        expect(stepZ / length).toBeCloseTo(rightZ, 6);
       }
+    });
+
+    it('ヘアピンでは奥の行ほど路面が画面の横へ流れる', () => {
+      // コースの形をそのまま引くので、コーナーの先の路面が画面に出る。
+      // 直線ではどの行も路面中心が画面中央付近に残る
+      const offsetAt = (s: number) => {
+        const view = viewAt(0, s);
+        const bands = affineRoadBands({ generation: 'SFC', view, track: TRACK });
+        const top = bands[0]!;
+        const [worldX, worldZ] = worldAt(top, PROFILE.video.internalWidth / 2);
+        return Math.abs(TRACK.toTrack(worldX, worldZ).lateral);
+      };
+      // s = 1600 はヘアピン進入、s = 200 はホームストレート
+      expect(offsetAt(1600)).toBeGreaterThan(40);
+      expect(offsetAt(200)).toBeLessThan(15);
     });
   });
 
   describe('clamp の扱い', () => {
-    it('V はどの行でもテクスチャの内側に収まる（模様が端で潰れない）', () => {
+    it('マップの外は単色で埋まる（repeat なら二本目の道路になる）', () => {
+      const bands = buildFrame('SFC', raceAfter(900)).affineSurfaces;
+      expect(bands.every((band) => band.wrap === 'clamp')).toBe(true);
+    });
+
+    it('コース上にいるかぎり、引く UV はマップの内側に収まる', () => {
       for (const ticks of MOMENTS) {
         const bands = buildFrame('SFC', raceAfter(ticks)).affineSurfaces;
         for (const band of bands) {
           for (const x of [0, PROFILE.video.internalWidth]) {
-            const [, v] = rawUv(band, x);
-            expect(v, `tick ${ticks} 行 ${band.screenRect[1]} の V`).toBeGreaterThan(0);
-            expect(v).toBeLessThan(1);
+            const [u, v] = rawUv(band, x);
+            expect(u, `tick ${ticks} 行 ${band.screenRect[1]} の U`).toBeGreaterThan(-0.2);
+            expect(u).toBeLessThan(1.2);
+            expect(v, `tick ${ticks} 行 ${band.screenRect[1]} の V`).toBeGreaterThan(-0.2);
+            expect(v).toBeLessThan(1.2);
           }
         }
-      }
-    });
-
-    it('U は範囲外へ出てよい（草地が伸びる。repeat なら二本目の道路になる）', () => {
-      const bands = buildFrame('SFC', raceAfter(900)).affineSurfaces;
-      expect(bands.every((band) => band.wrap === 'clamp')).toBe(true);
-      const outside = bands.some((band) => {
-        const [left] = rawUv(band, 0);
-        const [right] = rawUv(band, PROFILE.video.internalWidth);
-        return left < 0 || right > 1;
-      });
-      expect(outside).toBe(true);
-    });
-  });
-
-  describe('コーナーでの視界の傾き', () => {
-    it('直線では傾かず、コーナーでは V 成分が立つ', () => {
-      const tilts = MOMENTS.map((ticks) => {
-        const bands = buildFrame('SFC', raceAfter(ticks)).affineSurfaces;
-        return Math.max(...bands.map((band) => Math.abs(band.uvStepX[1])));
-      });
-      // どこかのコーナーでは明確に傾き、どの地点でも上限を超えない
-      expect(Math.max(...tilts)).toBeGreaterThan(1e-4);
-      const span = PROFILE.video.internalWidth;
-      expect(Math.max(...tilts) * span).toBeLessThanOrEqual(0.5 + 1e-9);
-    });
-
-    it('傾きの符号が前方の路面の向きと一致する', () => {
-      const view = viewAt(1500);
-      const bands = affineRoadBands({ generation: 'SFC', view });
-      for (const band of bands) {
-        const distance = view.distanceAtRow(band.screenRect[1] + band.screenRect[3] / 2);
-        const delta = view.headingDeltaAt(distance);
-        if (Math.abs(delta) < 0.05) continue;
-        // 右へ曲がる先では、画面を右へ進むほど「進行方向の先」を引く
-        expect(Math.sign(band.uvStepX[1])).toBe(Math.sign(delta));
       }
     });
   });
@@ -230,21 +262,14 @@ describe('第2世代のアフィンサーフェス', () => {
     });
   });
 
-  describe('路面テクスチャの前提', () => {
-    it('模様の周期がテクスチャ 1 枚に整数回入る（V をずらせる根拠）', () => {
-      const pattern = patternPeriodMeters(LAYOUT);
-      expect(pattern).toBe(LAYOUT.dashMeters + LAYOUT.dashGapMeters);
-      expect(pattern).toBe(LAYOUT.kerbStripeMeters * 2);
-      const repeats = LAYOUT.periodMeters / pattern;
-      expect(repeats).toBe(Math.round(repeats));
-      // 4 周期ぶんの余白が、傾けた行の V の遊びになる
-      expect(repeats).toBeGreaterThanOrEqual(4);
+  describe('マップの前提', () => {
+    it('引くのはコースマップで、帯テクスチャではない', () => {
+      const bands = buildFrame('SFC', raceAfter(900)).affineSurfaces;
+      expect(bands.every((band) => band.texture === SFC_ROAD_MAP.texture)).toBe(true);
+      expect(SFC_ROAD_MAP.texture).not.toBe(LAYOUT.texture);
     });
 
-    it('テクスチャ 1 枚が最遠の行の画面幅より広い（二本目の道路が出ない条件）', () => {
-      const widest = (SFC_DRAW_DISTANCE * PROFILE.video.internalWidth) / SFC_CAMERA.focal;
-      expect(LAYOUT.spanMeters).toBeGreaterThanOrEqual(widest / 2);
-      // 路面の実寸がコース定義（半幅 6 m）と一致していること
+    it('路面の実寸がコース定義（半幅 6 m）と一致している', () => {
       const layout: RoadSurfaceLayout = LAYOUT;
       expect(layout.roadHalfWidth).toBe(6);
     });

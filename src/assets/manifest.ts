@@ -20,6 +20,7 @@ import {
 import { ENVIRONMENT_MAP, SKYLINE } from '../game/view/shared/environment.js';
 import { FONT_ATLAS, LOGO_ATLAS } from '../game/view/shared/font.js';
 import { MARKER_ATLAS } from '../game/view/shared/minimap-layout.js';
+import { SFC_ROAD_MAP } from '../game/view/shared/road-map.js';
 import { ROAD_SURFACES } from '../game/view/shared/road-surface.js';
 import { TYRE_WALL, TYRE_WALLS } from '../game/view/shared/scenery-mesh.js';
 import { SCENERY_BILLBOARDS, SCENERY_SPRITES } from '../game/view/shared/scenery-sprite.js';
@@ -75,6 +76,23 @@ const roadTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) =
   const layout = ROAD_SURFACES[generation];
   return layout ? [{ url: layout.texture, wrap: 'clamp' as const }] : [];
 });
+
+/**
+ * 第2世代のコースマップ（生成物 / tools/build-road-map.mjs）。
+ *
+ * 帯ではなく**コース全体のトップダウン図**で、アフィン面の UV がワールド XZ の
+ * 写像になる（`road-map.ts`）。`clamp` なのは外周の単色をコースの外へ伸ばすため —
+ * 実機の「Mode 7 面の外はタイル 0 を敷く」設定に対応する。
+ *
+ * **`flipY: false` が要る。** v はワールド Z そのものなので、既定の `flipY: true` で
+ * 取り込むとコースが Z 方向に鏡像になり、自機の足元に路面が来なくなる。
+ * 帯テクスチャは v が模様の位相でしかなく、対称な繰り返しなので気付けなかった。
+ */
+const roadMapTexture: RenderTextureAsset = {
+  url: SFC_ROAD_MAP.texture,
+  wrap: 'clamp',
+  flipY: false,
+};
 
 /** 遠景の層。第2世代だけ `tools/build-backdrop.mjs` の生成物を読む（8-2） */
 const backdropTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) => {
@@ -165,6 +183,7 @@ export const MANIFEST: RenderAssetManifest = {
   textures: [
     { url: 'assets/common/fallback.png', wrap: 'clamp' },
     ...roadTextures,
+    roadMapTexture,
     // 遠景の層。第2世代は BG スペックへ寄せた生成物のほうを読む（8-2）
     ...backdropTextures,
     // **メッシュが参照するテクスチャは必ず `flipY: false`。**

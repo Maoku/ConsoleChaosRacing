@@ -1,7 +1,12 @@
 import type { AffineSurfaceCommand, GenerationId } from '@console-chaos/engine';
 
+import type { Track } from '../../sim/track.js';
+import {
+  SFC_ROAD_MAP,
+  roadMapProjection,
+  type RoadMapLayout,
+} from './road-map.js';
 import type { RoadView } from './projection.js';
-import { patternPeriodMeters } from './road-surface.js';
 
 /**
  * 走査線ごとのアフィン変換による擬似3D（実装計画 §3.3）。第2世代の路面はこれ 1 本で出る。
@@ -9,6 +14,17 @@ import { patternPeriodMeters } from './road-surface.js';
  * アフィン変換は 1 枚では透視にならない。実機（Mode 7）は HDMA で**走査線ごとに
  * パラメータを書き換えて**透視を作っていたので、ここでも同じ構造にする —
  * `AffineSurfaceCommand` を 1 行につき 1 枚積む。
+ *
+ * ## 引くのは「コース全体のトップダウン図」
+ *
+ * 初版は直線路 1 本の帯テクスチャを引き、コーナーは走査線ごとに U をずらして
+ * **それらしく見せていた**。真上から見たコースの形はどこにも無いので、
+ * ヘアピンでも視界は上限を掛けた演出ぶんしか回らず、「コーナーの先の路面が見える」
+ * という Mode 7 のいちばんの特徴が出なかった。
+ *
+ * いまはコースマップ（`road-map.ts` / `build-road-map.mjs`）を引く。UV が
+ * **ワールド XZ の写像そのもの**になるので、回転は演出ではなく投影の帰結として出る。
+ * 傾きの上限も V の位相合わせも要らなくなり、この関数から消えた。
  *
  * ## エンジンが読む値
  *
@@ -18,30 +34,29 @@ import { patternPeriodMeters } from './road-surface.js';
  *
  * を引く（`affineUvAt` が同じ式の CPU 参照）。`uvStepX` は **Vec2** であり、
  * 「画面を右へ 1 px 進んだときの U と V の進み」を別々に指定できる。
- * V 成分がコーナーでの視界の傾きになる。
+ * マップは軸がワールド X / Z に固定されているので、**視線が斜めを向いているぶんが
+ * そのまま両成分に乗る** — これがコーナーで視界が回る仕組みになる。
  *
  * ## 1 行ぶんの導出
  *
- * カメラ空間で、行が見ている距離を z、焦点距離を f とすると、画面を右へ 1 px 進むのは
- * 路面上を `z / f` メートル横へ動くことにあたる。前方の路面の向きが視線から φ だけ
- * 回っていれば、その横移動は路面の座標系では
+ * カメラ位置 C・前方 F・右 R（いずれもワールド XZ）、行が見ている距離 z、焦点距離 f として、
+ * 画面 x 列が見ているワールド上の点は
  *
- *     路面の横方向へ  cos φ · (z/f) [m]   → U へ  cos φ · (z/f) / TEX_W
- *     路面の進行方向へ sin φ · (z/f) [m]  → V へ  sin φ · (z/f) / TEX_L
+ *     P(x) = C + z·F + (x - W/2)·(z/f)·R
  *
- * と分解される。U の原点は「画面中央が引く U」（＝ `textureCenterAt`）から
- * 半画面ぶん戻せばよい。**第1世代のラスターと同じ量を、同じ `RoadView` から引いている** —
- * 表現手法が違うだけで、投影は 1 つである。
+ * これをマップの UV へ落とすだけでよい。画面を右へ 1 px 進む量 `(z/f)·R` を
+ * texel へ直したものが `uvStepX`、`P(0)` の UV が `uvOrigin` になる。
+ * **第1世代のラスターと同じ `RoadView` から引いている** — 表現手法が違うだけで投影は 1 つ。
  *
- * ## V を [0, 1) の内側へ寄せる
+ * ## 遠クリップと wrap
  *
- * `wrap` は `clamp` にする。`repeat` だと、コーナーの先で U が範囲を出たときに
- * **二本目の道路**が画面の端に現れてしまう（第1世代と同じ理由）。
- * ただし clamp は V にも掛かるので、傾けた行の V が端を越えると模様が潰れる。
+ * 行の距離は `map.farClip` で止める。下り坂ではカメラと路面の高さの差が開いて
+ * 最上行が 358 m 先まで見てしまい、そこまで窓（＝実機の Mode 7 面）に入れると
+ * 密度が落ちる（`road-map.ts` の「密度の決まり方」）。止めた先の行は 4 枚目の
+ * フォグ帯より奥＝ 94% が霞んでおり、地面の絵は 6% しか効かない。
  *
- * 路面テクスチャは V 方向に `patternPeriodMeters` ごとの繰り返しなので、
- * **V を 1 周期単位でずらしても絵は変わらない**。この性質を使って、行の V 範囲が
- * テクスチャの中央へ来るようにずらす。1 枚に 4 周期入れてあるのは、この遊びのため。
+ * `wrap` は `clamp`。マップの外周は単色で焼いてあるので、コースの外へ出た UV は
+ * その色で埋まる — 実機の「マップ外はタイル 0 を敷く」設定と同じ挙動になる。
  */
 
 /** 帯の粒度。1 行 = 1 サーフェスが基本で、負荷が要るときだけ粗くする */
@@ -60,25 +75,13 @@ export function affineBandRows(renderGenerations: number): number {
   return renderGenerations > 1 ? AFFINE_BAND_ROWS.coarse : AFFINE_BAND_ROWS.detailed;
 }
 
-/**
- * 視界の傾きの上限 [rad]。
- *
- * 前方の路面の向きをそのまま使うとヘアピンで 90° 近くまで回り、遠方の行が
- * 路面のはるか先を引いてしまう。**傾きは「コーナーに入った」ことを伝える演出**なので、
- * 効きを抑えたうえで頭打ちにする。
- */
-const MAX_TILT = 0.3;
-const TILT_GAIN = 0.7;
-
-/**
- * 1 行の V がテクスチャの中で動ける幅。中央へ寄せたうえで ±0.25 の余裕を残す。
- * ここに当たるのは最遠のごく数行だけで、そこはフォグでほぼ見えない。
- */
-const MAX_V_SPAN = 0.5;
-
 export interface AffineRoadOptions {
   readonly generation: GenerationId;
   readonly view: RoadView;
+  /** 視点のワールド座標を引くためのコース。マップの原点もここの `bounds` から決まる */
+  readonly track: Track;
+  /** 引くマップ。省略すると第2世代のもの */
+  readonly map?: RoadMapLayout;
   /** 1 枚のサーフェスが受け持つ行数。`affineBandRows()` で決める */
   readonly bandRows?: number;
 }
@@ -88,44 +91,51 @@ export interface AffineRoadOptions {
  * （テストが純関数として `validateAffineSurface` を掛けられる）。
  */
 export function affineRoadBands(options: AffineRoadOptions): AffineSurfaceCommand[] {
-  const { generation, view } = options;
+  const { generation, view, track } = options;
+  const map = options.map ?? SFC_ROAD_MAP;
+  const projection = roadMapProjection(track.bounds, map);
   const bandRows = Math.max(1, Math.round(options.bandRows ?? AFFINE_BAND_ROWS.detailed));
-  const { camera, layout, screenWidth, screenHeight } = view;
+  const { camera, screenWidth, screenHeight } = view;
   const halfWidth = screenWidth / 2;
-  const patternV = patternPeriodMeters(layout) / layout.periodMeters;
-  const patternMeters = patternPeriodMeters(layout);
+
+  // 視点のワールド位置と向き。カメラはコースの接線を前方とする（`projection.ts`）
+  const origin = track.sampleAt(view.originS);
+  const eye = track.toWorld(view.originS, view.originLateral);
+  const [forwardX, forwardZ] = origin.tangent;
+  const [rightX, rightZ] = origin.right;
+
+  // 1 m あたりの UV。マップは等方なので、texel 数だけが軸ごとに違う
+  const uPerMeter = map.texelsPerMeter / projection.width;
+  const vPerMeter = map.texelsPerMeter / projection.height;
 
   const bands: AffineSurfaceCommand[] = [];
   for (let top = camera.roadTopRow; top < screenHeight; top += bandRows) {
     const rows = Math.min(bandRows, screenHeight - top);
-    // 帯の中心行が見ている距離。帯の中では 1 つの z で通す（uvStepY を 0 にするのと同じ意味で、
+    // 帯の中では 1 つの距離で通す（uvStepY を 0 にするのと同じ意味で、
     // 実機の HDMA も 1 回の書き換えが次の書き換えまで効き続けた）
-    const distance = view.distanceAtRow(top + rows / 2);
-    const tilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, view.headingDeltaAt(distance) * TILT_GAIN));
+    const distance = Math.min(map.farClip, view.distanceAtRow(top + rows / 2));
     const metersPerPixel = distance / camera.focal;
 
-    const uStepX = (Math.cos(tilt) * metersPerPixel) / layout.spanMeters;
-    const vStepXRaw = (Math.sin(tilt) * metersPerPixel) / layout.periodMeters;
-    const vSpanLimit = MAX_V_SPAN / screenWidth;
-    const vStepX = Math.max(-vSpanLimit, Math.min(vSpanLimit, vStepXRaw));
+    // 画面を右へ 1 px 進むと、ワールドでは right へ metersPerPixel だけ動く
+    const uStepX = rightX * metersPerPixel * uPerMeter;
+    const vStepX = rightZ * metersPerPixel * vPerMeter;
 
-    // 行の V は画面中央で位相そのものになり、両端へ ±(W/2)·vStepX だけ振れる。
-    // 位相は 1 周期の剰余でしか意味を持たないので、**中央がテクスチャの中央へ来るよう**
-    // 1 周期単位でずらす。振れ幅を 0.25 に抑えてあるので clamp に当たらない
-    const along = (view.originS + distance) / patternMeters;
-    const phase = (along - Math.floor(along)) * patternV;
-    const centered = phase + Math.round((0.5 - phase) / patternV) * patternV;
-    const vOrigin = centered - halfWidth * vStepX;
+    // 画面左端（local.x = 0）が見ているワールド上の点
+    const worldX = eye[0] + forwardX * distance - rightX * halfWidth * metersPerPixel;
+    const worldZ = eye[2] + forwardZ * distance - rightZ * halfWidth * metersPerPixel;
 
     bands.push({
       id: `road-${generation}-${top}`,
-      texture: layout.texture,
+      texture: map.texture,
       screenRect: [0, top, screenWidth, rows],
-      uvOrigin: [view.textureCenterAt(distance) - halfWidth * uStepX, vOrigin],
+      uvOrigin: [
+        (worldX - projection.originX) * uPerMeter,
+        (worldZ - projection.originZ) * vPerMeter,
+      ],
       uvStepX: [uStepX, vStepX],
       // 帯の中は同じ距離として扱うので、行方向の進みは持たない
       uvStepY: [0, 0],
-      // repeat にすると、コーナーの先で U が範囲を出たときに二本目の道路が現れる
+      // マップの外周は単色。clamp がコースの外へその色を伸ばす
       wrap: 'clamp',
       generations: [generation],
     });

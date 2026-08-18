@@ -250,3 +250,70 @@ export function patternPeriodMeters(layout: RoadSurfaceLayout): number {
   const kerb = layout.kerbStripeMeters * 2;
   return dash === kerb ? dash : layout.periodMeters;
 }
+
+/**
+ * 路面の断面 1 点の色。`lateral` は路面中心からの符号付き距離 [m]、
+ * `along` は進行方向の距離 [m]（破線と縁石の縞の位相）。
+ *
+ * **帯テクスチャ（`build-road-texture.mjs`）とコースマップ（`build-road-map.mjs`）が
+ * 同じ寸法から同じ断面を引くための唯一の定義。** 2 つの生成器に同じ if 文を複製すると、
+ * 片方だけ寸法を直したときに世代間で路肩の位置がずれる。
+ *
+ * `halfWidth` を渡すと舗装の半幅をその値として扱う（コース側は進入で 7 m まで広がる）。
+ * 舗装の内側は比例で、外側の縁石・ランオフ・草地は平行移動で追従させる。
+ * 帯テクスチャは 1 枚に 1 つの幅しか焼けないので既定（`layout.roadHalfWidth`）で呼ぶ。
+ */
+export function roadSurfaceColorAt(
+  layout: RoadSurfaceLayout,
+  lateral: number,
+  along: number,
+  halfWidth: number = layout.roadHalfWidth,
+): string {
+  const colors = layout.colors;
+  const raw = Math.abs(lateral);
+  // 舗装の中は比例、外は平行移動。どちらも「路肩の位置」を基準に合わせている
+  const distance =
+    raw <= halfWidth
+      ? (raw * layout.roadHalfWidth) / halfWidth
+      : raw - (halfWidth - layout.roadHalfWidth);
+  const dashPeriod = layout.dashMeters + layout.dashGapMeters;
+  const kerbPeriod = layout.kerbStripeMeters * 2;
+  const phase = along - Math.floor(along / dashPeriod) * dashPeriod;
+  const kerbPhase = along - Math.floor(along / kerbPeriod) * kerbPeriod;
+
+  if (distance <= layout.roadHalfWidth) {
+    // センターライン（破線）
+    if (distance <= layout.lineWidth / 2 && phase < layout.dashMeters) return colors.line;
+    // 路肩線（実線）
+    if (Math.abs(distance - layout.edgeLineOffset) <= layout.lineWidth / 2) return colors.line;
+    // 路肩寄りの摩耗。色数に余裕のある世代だけで、舗装の幅を目で読ませる
+    if (distance > layout.roadHalfWidth - layout.wearWidth) return colors.asphaltWorn;
+    return colors.asphalt;
+  }
+
+  if (distance <= layout.roadHalfWidth + layout.kerbWidth) {
+    return kerbPhase < layout.kerbStripeMeters ? colors.kerbRed : colors.kerbPale;
+  }
+
+  if (distance <= layout.roadHalfWidth + layout.kerbWidth + layout.runoffWidth) {
+    return colors.runoff;
+  }
+
+  // 草地は路面から離れるほど暗くする。遠近ではなく横方向の広がりを出すための階調
+  let outside = distance - (layout.roadHalfWidth + layout.kerbWidth + layout.runoffWidth);
+  for (const band of colors.grass) {
+    if (outside < band.width) return band.color;
+    outside -= band.width;
+  }
+  return colors.grass[colors.grass.length - 1]!.color;
+}
+
+/** 草地の最後の帯（無限幅）まで届く、路面中心からの距離 [m]。マップの外周色の境界になる */
+export function roadSurfaceSpanMeters(layout: RoadSurfaceLayout): number {
+  let span = layout.roadHalfWidth + layout.kerbWidth + layout.runoffWidth;
+  for (const band of layout.colors.grass) {
+    if (!Number.isFinite(band.width)) break;
+    span += band.width;
+  }
+  return span;
+}

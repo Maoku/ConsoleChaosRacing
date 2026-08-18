@@ -109,10 +109,12 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
     frame.backgrounds.push(background);
   }
 
-  // ── 路面。走査線ごとに 1 枚のアフィン面（実機の HDMA と同じ粒度）
+  // ── 路面。走査線ごとに 1 枚のアフィン面（実機の HDMA と同じ粒度）。
+  //    引くのはコース全体のトップダウン図なので、コーナーでは視界が本当に回る
   for (const band of affineRoadBands({
     generation,
     view,
+    track,
     bandRows: affineBandRows(context.renderedGenerations),
   })) {
     frame.affineSurfaces.push(band);

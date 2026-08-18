@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GENERATION_IDS } from '@console-chaos/engine';
 
-import { ROAD_SURFACES, roadFraction } from '../src/game/view/shared/road-surface.ts';
+import { ROAD_SURFACES, roadFraction, roadSurfaceColorAt } from '../src/game/view/shared/road-surface.ts';
 import { encodePng } from './lib/png.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,44 +44,6 @@ function rgb(hex) {
   ];
 }
 
-/**
- * 位置 (lateral [m], along [m]) の色。
- * `lateral` は路面中心からの符号付き距離、`along` は 0..periodMeters。
- */
-function sample(layout, palette, lateral, along) {
-  const distance = Math.abs(lateral);
-  const dashPeriod = layout.dashMeters + layout.dashGapMeters;
-  const kerbPeriod = layout.kerbStripeMeters * 2;
-
-  if (distance <= layout.roadHalfWidth) {
-    // センターライン（破線）
-    if (distance <= layout.lineWidth / 2 && along % dashPeriod < layout.dashMeters) {
-      return palette.line;
-    }
-    // 路肩線（実線）
-    if (Math.abs(distance - layout.edgeLineOffset) <= layout.lineWidth / 2) return palette.line;
-    // 路肩寄りの摩耗。色数に余裕のある世代だけで、舗装の幅を目で読ませる
-    if (distance > layout.roadHalfWidth - layout.wearWidth) return palette.asphaltWorn;
-    return palette.asphalt;
-  }
-
-  if (distance <= layout.roadHalfWidth + layout.kerbWidth) {
-    return along % kerbPeriod < layout.kerbStripeMeters ? palette.kerbRed : palette.kerbPale;
-  }
-
-  if (distance <= layout.roadHalfWidth + layout.kerbWidth + layout.runoffWidth) {
-    return palette.runoff;
-  }
-
-  // 草地は路面から離れるほど暗くする。遠近ではなく横方向の広がりを出すための階調
-  let outside = distance - (layout.roadHalfWidth + layout.kerbWidth + layout.runoffWidth);
-  for (const band of palette.grass) {
-    if (outside < band.width) return band.color;
-    outside -= band.width;
-  }
-  return palette.grass[palette.grass.length - 1].color;
-}
-
 function render(layout) {
   const { textureWidth: width, textureHeight: height } = layout;
   /** テクスチャ 1 画素が表す横方向の距離 [m] */
@@ -89,14 +51,15 @@ function render(layout) {
   /** テクスチャ 1 画素が表す進行方向の距離 [m] */
   const metersPerPixelV = layout.periodMeters / height;
 
-  const palette = {
-    asphalt: rgb(layout.colors.asphalt),
-    asphaltWorn: rgb(layout.colors.asphaltWorn),
-    line: rgb(layout.colors.line),
-    kerbRed: rgb(layout.colors.kerbRed),
-    kerbPale: rgb(layout.colors.kerbPale),
-    runoff: rgb(layout.colors.runoff),
-    grass: layout.colors.grass.map((band) => ({ width: band.width, color: rgb(band.color) })),
+  // 断面の定義は `road-surface.ts` の 1 か所。ここは走査と色の変換だけを持つ
+  const palette = new Map();
+  const toRgb = (hex) => {
+    let value = palette.get(hex);
+    if (!value) {
+      value = rgb(hex);
+      palette.set(hex, value);
+    }
+    return value;
   };
 
   const pixels = Buffer.alloc(width * height * 4);
@@ -105,7 +68,7 @@ function render(layout) {
     const along = (y + 0.5) * metersPerPixelV;
     for (let x = 0; x < width; x++) {
       const lateral = (x + 0.5 - width / 2) * metersPerPixelU;
-      const [red, green, blue] = sample(layout, palette, lateral, along);
+      const [red, green, blue] = toRgb(roadSurfaceColorAt(layout, lateral, along));
       const offset = (y * width + x) * 4;
       pixels[offset] = red;
       pixels[offset + 1] = green;
