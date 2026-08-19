@@ -2,11 +2,12 @@ import { generationValue, type RenderFrame, type SpriteCommand } from '@console-
 
 import { formatLapTime } from '../sim/race.js';
 import { COUNTDOWN_TICKS, LAP_COUNT } from '../sim/state.js';
-import type { ViewContext } from './context.js';
+import { screenModeOf, type ViewContext } from './context.js';
 import { centeredBlock } from './shared/centered-text.js';
 import type { DisplayCar } from './shared/display-state.js';
 import { TEXT_STYLES } from './shared/hud.js';
 import { floorToTile } from './shared/quantize.js';
+import { screenModeLabel } from './shared/screen-mode.js';
 import { titleSprites } from './title.js';
 import { PLAYER_ENTRANT } from './shared/variants.js';
 
@@ -98,6 +99,8 @@ function pausedSprites(context: ViewContext): readonly SpriteCommand[] {
     lines: [
       { text: 'PAUSED', scale: 3 },
       { text: 'ENTER: RESUME  BACK: TITLE', scale: 1, emphasis: false, gapBefore: 6 },
+      // 画面モードの現在値（11-7）。設定画面は作らず、押せるキーと状態をここに出す
+      { text: screenModeLabel(screenModeOf(context)), scale: 1, emphasis: false, gapBefore: 3 },
     ],
   }).sprites;
 }

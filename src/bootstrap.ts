@@ -16,6 +16,7 @@ import {
 
 import { MANIFEST } from './assets/manifest.js';
 import { arrangementFor } from './game/audio/score.js';
+import type { ScreenMode } from './game/view/shared/screen-mode.js';
 
 export interface BootOptions {
   canvas: HTMLCanvasElement;
@@ -27,6 +28,11 @@ export interface BootOptions {
    * `playScore()` を呼んだ時点で実際に鳴り始める（§4.1）。
    */
   score?: Score;
+  /**
+   * 画面モード（実装計画 11-7）。**レンダラーが毎フレーム読む。**
+   * `GameModule` と同じものを渡すので、キーで倒した値がそのまま絵に出る。
+   */
+  screenMode?: ScreenMode;
 }
 
 export interface BootResult {
@@ -71,7 +77,12 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     assets,
     manifest: MANIFEST,
     quality: () => 'full',
-    ...(flatCrtRequested() ? { crtOverride: () => FLAT_CRT } : {}),
+    // 開発時の `?crt=off`（計測の口）が優先。それ以外は画面モードの上書きを毎フレーム読む
+    ...(flatCrtRequested()
+      ? { crtOverride: () => FLAT_CRT }
+      : options.screenMode
+        ? { crtOverride: () => options.screenMode!.crtOverride() }
+        : {}),
   });
 
   // WebGL レンダラーの resize() は `canvas.width/height` からビューポートを張り直すだけで、

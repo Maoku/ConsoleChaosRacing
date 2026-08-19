@@ -26,6 +26,12 @@ export const ACTIONS = defineActions({
   genSelect2: 'button',
   genSelect3: 'button',
   genSelect4: 'button',
+  /**
+   * 画面モード（実装計画 11-7）。世代切替と同じで**どの画面でも効く**。
+   * フラットディスプレイ（樽型歪み）とモアレ（走査線 ＋ 蛍光体マスク）。
+   */
+  toggleFlat: 'button',
+  toggleMoire: 'button',
   pause: 'button',
   /** 決定。タイトルから走り出す・リザルトからリトライ・ポーズを解く */
   confirm: 'button',
@@ -56,6 +62,10 @@ const BINDINGS: ActionBindings<RacingActions> = {
   genSelect2: { keys: ['Digit2', 'Numpad2'] },
   genSelect3: { keys: ['Digit3', 'Numpad3'] },
   genSelect4: { keys: ['Digit4', 'Numpad4'] },
+  // ゲームパッドには割り当てない。画面モードは腰を据えて選ぶ設定で、
+  // 運転しながら触るものではない
+  toggleFlat: { keys: ['KeyF'] },
+  toggleMoire: { keys: ['KeyM'] },
   pause: { keys: ['Escape'], gamepadButtons: [9] },
   // 決定はアクセルと同じキーで受ける。走り出すのと走らせ続けるのが同じ操作になる
   confirm: { keys: ['Enter', 'Space', 'KeyZ'], gamepadButtons: [0] },

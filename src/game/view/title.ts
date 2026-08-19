@@ -70,7 +70,7 @@ const MINIMAP_GAP = 4;
  * HUD の `CH n : NTH GEN` と番号が対応する — **チャンネルを回す**という
  * 見立てが、操作説明・HUD・キーの 3 か所で揃う。
  */
-const CONTROLS = ['Z ACCEL  X BRAKE', 'Q E 1-4: CHANNEL'] as const;
+const CONTROLS = ['Z ACCEL  X BRAKE', 'Q E 1-4: CHANNEL', 'F FLAT  M MOIRE'] as const;
 
 export function titleSprites(context: ViewContext): SpriteCommand[] {
   const { generation, profile, display } = context;
@@ -149,8 +149,9 @@ function controlsSprites(context: ViewContext): SpriteCommand[] {
   const advance = fontAdvance(profile.video.tileSnap);
   const pitch = style.linePitch * style.scale;
   const glyphHeight = FONT_ATLAS.glyphHeight * style.scale;
-  const height = (CONTROLS.length - 1) * pitch + glyphHeight;
-  const width = Math.max(...CONTROLS.map((text) => measureText(text, style.scale, advance)));
+  const lines = CONTROLS;
+  const height = (lines.length - 1) * pitch + glyphHeight;
+  const width = Math.max(...lines.map((text) => measureText(text, style.scale, advance)));
 
   const left = ceilToTile(safe.left, profile);
   const top = floorToTile(safe.top + safe.height - height, profile);
@@ -172,7 +173,7 @@ function controlsSprites(context: ViewContext): SpriteCommand[] {
     }),
   ];
 
-  CONTROLS.forEach((text, index) => {
+  lines.forEach((text, index) => {
     for (const sprite of textSprites({
       id: `screen-${generation}-title-controls-${index}`,
       text,

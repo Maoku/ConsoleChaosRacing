@@ -8,6 +8,7 @@ import type { ScreenId } from '../flow/screens.js';
 import type { RaceState } from '../sim/state.js';
 import type { CameraViewId } from './shared/camera.js';
 import type { DisplaySnapshot } from './shared/display-state.js';
+import { DEFAULT_SCREEN_MODE, type ScreenModeState } from './shared/screen-mode.js';
 
 /**
  * ビューが受け取るすべて。
@@ -47,6 +48,18 @@ export interface ViewContext {
    * 省略時は追走視点 — 視点を知らないテストやビューはこれまでどおり動く。
    */
   readonly cameraView?: CameraViewId;
+  /**
+   * 画面モード（実装計画 11-7）。視点と同じ「見た目のためだけの状態」で、
+   * ビューが読むのは**現在値を文字で出すため**だけ — 絵そのものを変えるのは
+   * レンダラーへ渡す `crtOverride()` のほうである。
+   * 省略時は既定（いまの見え方）。
+   */
+  readonly screenMode?: ScreenModeState;
+}
+
+/** 画面モードの現在値。渡されていなければ既定 */
+export function screenModeOf(context: ViewContext): ScreenModeState {
+  return context.screenMode ?? DEFAULT_SCREEN_MODE;
 }
 
 export type ViewBuilder = (frame: RenderFrame, context: ViewContext) => void;

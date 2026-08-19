@@ -1,5 +1,6 @@
 import { boot } from './bootstrap.js';
-import { racingModule } from './game/module.js';
+import { createRacingModule } from './game/module.js';
+import { createScreenMode } from './game/view/shared/screen-mode.js';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) throw new Error('Missing #game canvas');
@@ -16,7 +17,15 @@ function fail(error: unknown): never {
 }
 
 try {
-  const session = await boot({ canvas, module: racingModule, initialGeneration: 'FC' });
+  // 画面モードはレンダラーとモジュールで**同じ 1 つ**を共有する（11-7）。
+  // キーで倒すのはモジュール、毎フレーム読むのはレンダラー
+  const screenMode = createScreenMode();
+  const session = await boot({
+    canvas,
+    module: createRacingModule({ screenMode }),
+    initialGeneration: 'FC',
+    screenMode,
+  });
   if (bootOverlay) bootOverlay.hidden = true;
 
   if (import.meta.env.DEV) {
@@ -36,6 +45,9 @@ try {
     'KeyX',
     'KeyQ',
     'KeyE',
+    // 画面モード（11-7）
+    'KeyF',
+    'KeyM',
     'Enter',
     'Escape',
     // 戻る。既定動作（履歴を戻る）に食われるとタイトルへ帰れない
