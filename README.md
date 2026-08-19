@@ -64,8 +64,24 @@ rm -rf node_modules && npm install
 | `npm test` | Vitest（純ロジックのテスト） |
 | `npm run typecheck` | 型チェックのみ |
 | `npm run check:cars` | 変換済み車アセットの SHA-256 照合 |
+| `npm run measure:pace` | 敵車の速度スケールとペース較正を実測（下記） |
 | `npm run build:minimap` | コース中心線からミニマップ PNG とマーカーを生成 |
 | `npm run build:assets` | 生成系アセットをまとめて再生成 |
+
+### バランス定数の較正
+
+`BALANCE.SPEED_SCALE`（敵車の速度倍率）と AI のペース較正は、**コース形状と車両定数から
+決まる実測値**であって手で選べる数ではない。要求は「敵車が走行中に出す最高速度が自機の
+0.95 倍」だが、直線が短いこのコースでは定数を 0.95 倍しても実測比は 0.971 にしかならない
+（詳細は [`Docs/BALANCE_PLAN.md`](Docs/BALANCE_PLAN.md) §2.3）。
+
+したがって**コース形状・車両定数・AI のライン計算を変えたら必ず流し直す**。
+
+```bash
+npm run measure:pace
+```
+
+実測が現在の定数とずれていれば異常終了する。出た値で `src/game/sim/` の定数を置き換える。
 
 ## 操作
 
