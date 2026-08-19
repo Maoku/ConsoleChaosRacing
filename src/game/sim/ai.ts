@@ -13,7 +13,8 @@ import {
  * AI ドライバ（実装計画 §5.3）。
  *
  * 「理想ライン ＋ 個体差 ＋ 前方車回避」の 3 つだけ。乱数は使わず、
- * 個体差は `CarState` に焼き込まれた定数（`skill` / `lineBias` / `reactionTicks`）で表す。
+ * 個体差は `CarState` に焼き込まれた定数（`speedScale` / `lineBias` / `reactionTicks`）と、
+ * 目標タイムから逆算されるペース倍率（`pace`）で表す。
  * 同一シードなら完全に同じ走りになる。
  */
 
@@ -73,7 +74,7 @@ function targetSpeedFor(track: Track, car: CarState): number {
     );
     if (entrySpeed < target) target = entrySpeed;
   }
-  return target * car.skill;
+  return target * car.pace;
 }
 
 /** 前方に詰まっている車を避けるための横方向のずらし量 [m] */

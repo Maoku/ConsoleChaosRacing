@@ -15,12 +15,20 @@
  *   2. `SPEED_SCALE` — **走行中の最高速度の比がちょうど 0.950 になる値**を二分探索で求める
  *      （要求の 0.95 は定数の値ではなく実測される比。§4.2）
  *   3. `REFERENCE_LAP_SECONDS` / `SECONDS_PER_PACE` — ペースを振り、ラップとの関係を最小二乗で
- *   4. `STANDING_START_SECONDS` — 立ち上がりの損（1 周目 − 2 周目）
+ *   4. `STANDING_START_SECONDS` — 立ち上がりの損（完走 − 飛び込み 3 周）
+ *   5. 難易度ごとの目標タイム表と、それを達成するのに要るペース
  *
  * 現在の定数とずれていたら警告する。速度定数・コース・AI のライン計算を変えたら必ず流す。
  */
 import { stepRace, tickToSeconds } from '../src/game/sim/race.ts';
-import { BALANCE, LAP_COUNT, createRaceState } from '../src/game/sim/state.ts';
+import {
+  BALANCE,
+  DIFFICULTY,
+  ENTRANT_COUNT,
+  LAP_COUNT,
+  createRaceState,
+  targetRaceTicksFor,
+} from '../src/game/sim/state.ts';
 
 /** 実測比の目標。要求 R-1 そのもの */
 const TARGET_SPEED_RATIO = 0.95;
@@ -42,7 +50,7 @@ function soloRun(speedScale, pace, { laps = 3, fromGrid = false } = {}) {
   const state = createRaceState({ seed: 20260812, autoPilot: true });
   const car = state.cars[0];
   car.speedScale = speedScale;
-  car.skill = pace;
+  car.pace = pace;
   state.cars.length = 0;
   state.cars.push(car);
   state.standingOrder.length = 0;
@@ -161,6 +169,28 @@ console.log('■ ペース較正');
 console.log(`  REFERENCE_LAP_SECONDS  ${fixed(referenceLap)} s`);
 console.log(`  SECONDS_PER_PACE       ${fixed(slope)} s / ペース 1.0`);
 console.log(`  STANDING_START_SECONDS ${fixed(startLoss)} s`);
+consistent.push(report('STANDING_START_SECONDS', startLoss, BALANCE.STANDING_START_SECONDS, 0.05));
+
+// ── 5. 難易度ごとの目標と必要ペース
+// 必要ペースは §2.5 の線形近似の逆写像。ペース制御（`updatePace`）はこれを
+// 先読みに使うだけで、誤差は閉ループが吸う
+const requiredPace = (lapSeconds) => 1 + (referenceLap - lapSeconds) / slope;
+for (const difficulty of Object.keys(DIFFICULTY)) {
+  console.log('');
+  console.log(`■ 目標タイム（${difficulty}・ばらつき前）`);
+  console.log('  entrant   目標ラップ    目標レース    必要ペース');
+  for (let entrant = 1; entrant < ENTRANT_COUNT; entrant++) {
+    const raceSeconds = tickToSeconds(targetRaceTicksFor(entrant, difficulty, 0));
+    const lapSeconds = (raceSeconds - startLoss) / LAP_COUNT;
+    console.log(
+      `     ${entrant}     ${fixed(lapSeconds)} s  ${fixed(raceSeconds, 2)} s     ${requiredPace(lapSeconds).toFixed(3)}`,
+    );
+  }
+  const leader = tickToSeconds(targetRaceTicksFor(1, difficulty, 0));
+  const last = tickToSeconds(targetRaceTicksFor(ENTRANT_COUNT - 1, difficulty, 0));
+  console.log(`  トップ〜最下位の差 ${fixed(last - leader, 2)} s`);
+  console.log(`  先頭の余裕（AI の限界 ${fixed(gridRun.raceSeconds, 2)} s との差） ${fixed(leader - gridRun.raceSeconds, 2)} s`);
+}
 
 console.log('');
 if (consistent.includes(false)) {

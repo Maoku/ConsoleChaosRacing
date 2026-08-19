@@ -1,4 +1,4 @@
-import { createRng, mix32 } from '@console-chaos/engine';
+import { FIXED_DT_SECONDS, createRng, mix32 } from '@console-chaos/engine';
 
 import { TRACK, type Track } from './track.js';
 
@@ -33,7 +33,61 @@ export const BALANCE = {
    * 実測比は 0.971 にしかならない。二分探索で実測比が 0.950 になる値がこれ。
    */
   SPEED_SCALE: 0.933,
+  /**
+   * グリッドから GO して完走するまでと、飛び込み 3 周との差 [s]。
+   * 目標レースタイムはこのぶんだけ 3 周ぶんのラップより長い
+   */
+  STANDING_START_SECONDS: 3.92,
+  /** スタート時に目標タイムへ足すばらつきの幅 [s]（要求 R-2 b） */
+  START_JITTER_SECONDS: 2,
 } as const;
+
+export type Difficulty = 'easy' | 'normal' | 'hard';
+
+/**
+ * 難易度（バランス改修計画 §4.3・D-7）。
+ *
+ * - `leaderLapSeconds` — 先頭（entrant 1）の目標ラップ [s]。ここだけで難易度が決まる
+ * - `fieldSpreadSeconds` — 敵車 7 台のトップと最下位の目標レースタイムの差 [s]（要求 R-2 c）
+ *
+ * 基準は 2 つの実測アンカー: **理想** 69.90 s（AI が理想ラインをペース 1.0 で走った値。
+ * 人間がこれを上回ることはほぼ無い）と **普通** 74.68 s。`normal` はその中間値、
+ * `easy` は「普通」そのもの、`hard` は敵車スペックの AI の限界（71.48 s）＋ 0.4 s。
+ *
+ * **`hard` をこれ以上速くできないのは要求 R-1 の帰結**である。速度を自機の 0.95 に
+ * 落とした車の限界が 71.48 s/周なので、`leaderLapSeconds` は 71.6 s より下へ行けない。
+ */
+export const DIFFICULTY: Record<
+  Difficulty,
+  { readonly leaderLapSeconds: number; readonly fieldSpreadSeconds: number }
+> = {
+  easy: { leaderLapSeconds: 74.7, fieldSpreadSeconds: 15 },
+  normal: { leaderLapSeconds: 72.3, fieldSpreadSeconds: 15 },
+  hard: { leaderLapSeconds: 71.9, fieldSpreadSeconds: 15 },
+};
+
+/** 目標タイムを持たない車（実操作の自機）の目印 */
+export const NO_TARGET = -1;
+
+/**
+ * 敵車の目標レースタイム [tick]。GO から完走まで（決定 D-1）。
+ *
+ * グリッド順（前ほど速い）に `fieldSpreadSeconds` を 6 等分して配るので、
+ * トップと最下位の差はきっかり要求どおりになる。`jitterSeconds` は要求 R-2 (b) の
+ * 0〜+2 秒で、レース生成時に一度だけ決まる。
+ */
+export function targetRaceTicksFor(
+  entrant: number,
+  difficulty: Difficulty,
+  jitterSeconds: number,
+): number {
+  const { leaderLapSeconds, fieldSpreadSeconds } = DIFFICULTY[difficulty];
+  const rank = entrant - 1; // 0..6
+  const lapSeconds = leaderLapSeconds + (rank * (fieldSpreadSeconds / LAP_COUNT)) / (ENTRANT_COUNT - 2);
+  const raceSeconds =
+    LAP_COUNT * lapSeconds + BALANCE.STANDING_START_SECONDS + jitterSeconds;
+  return Math.round(raceSeconds / FIXED_DT_SECONDS);
+}
 
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
@@ -85,14 +139,23 @@ export interface CarState {
    * `topSpeedOf()` / `accelOf()` からだけ読む
    */
   readonly speedScale: number;
+  /**
+   * 目標総レースタイム [tick]。GO から完走まで。持たない車は `NO_TARGET`。
+   *
+   * 順位の設計値そのもの。**上限ではない**ので、事故で失った時間を取り返すための
+   * 「ゴム紐」は入れない（決定 D-6）
+   */
+  readonly targetRaceTicks: number;
 
   // ── AI の個体差（生成時に決まり、以後変わらない）
-  /** 到達速度の倍率 0.93..1.0 */
-  readonly skill: number;
   /** 理想ラインの横方向オフセット [m] */
   readonly lineBias: number;
   /** 反応の鈍さ [tick] */
   readonly reactionTicks: number;
+
+  // ── ペース制御の状態（毎ティック更新される派生値）
+  /** 現在のペース倍率。AI の目標速度に掛かる。目標タイムから逆算される */
+  pace: number;
 }
 
 export interface RaceState {
@@ -109,13 +172,22 @@ export interface RaceState {
   readonly standingOrder: number[];
 }
 
-function createCar(entrant: number, track: Track, seed: number): CarState {
+function createCar(
+  entrant: number,
+  track: Track,
+  seed: number,
+  difficulty: Difficulty,
+): CarState {
   const rng = createRng(mix32(seed ^ (entrant * 0x9e3779b1)));
   // グリッドは 2 列。ポールが最も前（s が大きい ＝ スタートラインに近い）
   const row = Math.floor(entrant / 2);
   const column = entrant % 2;
   const s = track.wrapS(-8 - row * 11);
   const lateral = column === 0 ? -2.6 : 2.6;
+  // 乱数の消費順は**廃止した `skill` の位置**に目標タイムのばらつきを置く。
+  // こうすると `lineBias` / `reactionTicks` が 1 ビットも変わらず、走りの差分の原因を
+  // 速度スケールと目標タイムだけに絞れる（バランス改修計画 リスク 6）
+  const jitterSeconds = entrant === 0 ? 0 : rng.next() * BALANCE.START_JITTER_SECONDS;
 
   return {
     entrant,
@@ -140,10 +212,12 @@ function createCar(entrant: number, track: Track, seed: number): CarState {
     longitudinalAccel: 0,
     // 自機（0）は自機のスペックのまま。敵車だけが 0.95 の実測比まで落ちる
     speedScale: entrant === 0 ? 1 : BALANCE.SPEED_SCALE,
+    targetRaceTicks:
+      entrant === 0 ? NO_TARGET : targetRaceTicksFor(entrant, difficulty, jitterSeconds),
     // 自機（0）は個体差を持たない。AI だけがばらつく
-    skill: entrant === 0 ? 1 : 0.93 + rng.next() * 0.07,
     lineBias: entrant === 0 ? 0 : (rng.next() - 0.5) * 1.6,
     reactionTicks: entrant === 0 ? 0 : Math.floor(rng.next() * 6),
+    pace: 1,
   };
 }
 
@@ -151,14 +225,17 @@ export interface CreateRaceOptions {
   readonly seed?: number;
   readonly track?: Track;
   readonly autoPilot?: boolean;
+  /** 敵車の目標タイムの厳しさ。既定は `'normal'`（決定 D-7） */
+  readonly difficulty?: Difficulty;
 }
 
 export function createRaceState(options: CreateRaceOptions = {}): RaceState {
   const track = options.track ?? TRACK;
   const seed = options.seed ?? 20260812;
+  const difficulty = options.difficulty ?? 'normal';
   const cars: CarState[] = [];
   for (let entrant = 0; entrant < ENTRANT_COUNT; entrant++) {
-    cars.push(createCar(entrant, track, seed));
+    cars.push(createCar(entrant, track, seed, difficulty));
   }
   for (const car of cars) {
     car.progress = car.lap * track.length + car.s - track.length;

@@ -3,9 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { stepRace, tickToSeconds } from '../src/game/sim/race.js';
 import {
   BALANCE,
+  DIFFICULTY,
   ENTRANT_COUNT,
+  LAP_COUNT,
+  NO_TARGET,
   createRaceState,
+  targetRaceTicksFor,
   type CarState,
+  type Difficulty,
   type RaceState,
 } from '../src/game/sim/state.js';
 
@@ -80,5 +85,62 @@ describe('バランス: 敵車の最高速度（R-1）', () => {
     for (let entrant = 1; entrant < ENTRANT_COUNT; entrant++) {
       expect(state.cars[entrant]!.speedScale).toBe(BALANCE.SPEED_SCALE);
     }
+  });
+});
+
+/** 敵車のエントラント番号 1..7 */
+const RIVALS = Array.from({ length: ENTRANT_COUNT - 1 }, (_, index) => index + 1);
+const DIFFICULTIES: Difficulty[] = ['easy', 'normal', 'hard'];
+
+/** ばらつきを除いた素の目標レースタイム [s] */
+function baseTargetSeconds(entrant: number, difficulty: Difficulty): number {
+  return tickToSeconds(targetRaceTicksFor(entrant, difficulty, 0));
+}
+
+describe('バランス: 目標タイム（R-2 a/b/c）', () => {
+  it('トップと最下位の目標レースタイムの差が 15 秒', () => {
+    for (const difficulty of DIFFICULTIES) {
+      const leader = baseTargetSeconds(1, difficulty);
+      const last = baseTargetSeconds(ENTRANT_COUNT - 1, difficulty);
+      expect(last - leader).toBeCloseTo(DIFFICULTY[difficulty].fieldSpreadSeconds, 2);
+    }
+  });
+
+  it('目標はグリッド順に単調増加する（前ほど速い）', () => {
+    for (const difficulty of DIFFICULTIES) {
+      for (let entrant = 2; entrant < ENTRANT_COUNT; entrant++) {
+        expect(baseTargetSeconds(entrant, difficulty)).toBeGreaterThan(
+          baseTargetSeconds(entrant - 1, difficulty),
+        );
+      }
+    }
+  });
+
+  it('スタート時のばらつきは 0〜+2 秒で、シードが同じなら毎回同じ', () => {
+    for (const seed of [1, 7, 20260812, 99991, 4417633]) {
+      const first = createRaceState({ seed });
+      const second = createRaceState({ seed });
+      for (const entrant of RIVALS) {
+        const jitter =
+          tickToSeconds(first.cars[entrant]!.targetRaceTicks) - baseTargetSeconds(entrant, 'normal');
+        expect(jitter).toBeGreaterThanOrEqual(-1 / 60);
+        expect(jitter).toBeLessThanOrEqual(BALANCE.START_JITTER_SECONDS + 1 / 60);
+        expect(second.cars[entrant]!.targetRaceTicks).toBe(first.cars[entrant]!.targetRaceTicks);
+      }
+    }
+  });
+
+  it('自機は目標タイムを持たない', () => {
+    expect(createRaceState({ seed: 20260812 }).cars[0]!.targetRaceTicks).toBe(NO_TARGET);
+  });
+
+  it('難易度を上げると全車の目標が短くなり、hard でも AI の限界を下回らない', () => {
+    for (const entrant of RIVALS) {
+      expect(baseTargetSeconds(entrant, 'normal')).toBeLessThan(baseTargetSeconds(entrant, 'easy'));
+      expect(baseTargetSeconds(entrant, 'hard')).toBeLessThan(baseTargetSeconds(entrant, 'normal'));
+    }
+    // 敵車スペックの AI の限界（単独・ペース 1.0・ポールから完走）
+    const limit = LAP_COUNT * 71.483 + BALANCE.STANDING_START_SECONDS;
+    expect(baseTargetSeconds(1, 'hard')).toBeGreaterThan(limit);
   });
 });
