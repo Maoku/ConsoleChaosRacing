@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { PACE } from '../src/game/sim/ai.js';
 import { stepRace, tickToSeconds } from '../src/game/sim/race.js';
 import {
   BALANCE,
+  COUNTDOWN_TICKS,
   DIFFICULTY,
   ENTRANT_COUNT,
   LAP_COUNT,
@@ -143,4 +145,148 @@ describe('バランス: 目標タイム（R-2 a/b/c）', () => {
     const limit = LAP_COUNT * 71.483 + BALANCE.STANDING_START_SECONDS;
     expect(baseTargetSeconds(1, 'hard')).toBeGreaterThan(limit);
   });
+});
+
+interface RaceResult {
+  /** 敵車の完走タイム [s]。GO から */
+  readonly actualSeconds: number[];
+  /** 敵車の目標タイム [s] */
+  readonly targetSeconds: number[];
+  /** 敵車の順位 */
+  readonly standings: number[];
+  /** 走行中に観測したペースの最小・最大 */
+  readonly paceRange: [number, number];
+  /** ペースの変化率の最大 [1/s]。GO の初期化は含めない */
+  readonly maxPaceRate: number;
+  readonly finishTicks: number[];
+}
+
+/** 完走まで回して、目標に対する結果を集める */
+function runRace(seed: number, difficulty: Difficulty): RaceResult {
+  const state = createRaceState({ seed, autoPilot: true, difficulty });
+  const previousPace = state.cars.map((car) => car.pace);
+  let paceMin = Number.POSITIVE_INFINITY;
+  let paceMax = Number.NEGATIVE_INFINITY;
+  let maxPaceRate = 0;
+
+  while (state.phase !== 'finished' && state.tick < 60 * 60 * 20) {
+    stepRace(state);
+    for (const car of state.cars) {
+      if (car.targetRaceTicks === NO_TARGET || car.finished) continue;
+      paceMin = Math.min(paceMin, car.pace);
+      paceMax = Math.max(paceMax, car.pace);
+      // GO の 1 ティックは「初期値を置く」ので変化率には数えない（§4.4）
+      if (state.tick > COUNTDOWN_TICKS + 1) {
+        maxPaceRate = Math.max(maxPaceRate, Math.abs(car.pace - previousPace[car.entrant]!) * 60);
+      }
+      previousPace[car.entrant] = car.pace;
+    }
+  }
+  expect(state.phase).toBe('finished');
+
+  const rivals = state.cars.slice(1);
+  return {
+    actualSeconds: rivals.map((car) => tickToSeconds(car.finishTick - COUNTDOWN_TICKS)),
+    targetSeconds: rivals.map((car) => tickToSeconds(car.targetRaceTicks)),
+    standings: rivals.map((car) => car.standing),
+    paceRange: [paceMin, paceMax],
+    maxPaceRate,
+    finishTicks: state.cars.map((car) => car.finishTick),
+  };
+}
+
+/** スピアマンの順位相関 */
+function rankCorrelation(left: number[], right: number[]): number {
+  const rankOf = (values: number[]): number[] => {
+    const order = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+    const ranks = new Array<number>(values.length);
+    order.forEach((entry, rank) => (ranks[entry.index] = rank));
+    return ranks;
+  };
+  const a = rankOf(left);
+  const b = rankOf(right);
+  const count = a.length;
+  const squared = a.reduce((sum, rank, index) => sum + (rank - b[index]!) ** 2, 0);
+  return 1 - (6 * squared) / (count * (count * count - 1));
+}
+
+// 完走まで回すテストは 1 レースあたり 1 秒強かかる。既定の 5 秒では足りない
+const RACE_TIMEOUT_MS = 120_000;
+
+describe('バランス: 目標タイムの達成（R-2 d）', () => {
+  const seeds = [20260812, 7, 99991];
+  const results = new Map<string, RaceResult>();
+  const resultFor = (seed: number, difficulty: Difficulty): RaceResult => {
+    const key = `${seed}:${difficulty}`;
+    const cached = results.get(key);
+    if (cached) return cached;
+    const fresh = runRace(seed, difficulty);
+    results.set(key, fresh);
+    return fresh;
+  };
+
+  it('各敵車の完走タイムが目標の −0.5 〜 +2.0 秒に収まる', () => {
+    for (const difficulty of DIFFICULTIES) {
+      for (const seed of seeds) {
+        const result = resultFor(seed, difficulty);
+        for (let index = 0; index < result.actualSeconds.length; index++) {
+          const error = result.actualSeconds[index]! - result.targetSeconds[index]!;
+          expect(error, `${difficulty}/${seed}/entrant ${index + 1}`).toBeGreaterThanOrEqual(-0.5);
+          expect(error, `${difficulty}/${seed}/entrant ${index + 1}`).toBeLessThanOrEqual(2.0);
+        }
+      }
+    }
+  }, RACE_TIMEOUT_MS);
+
+  it('実測のトップと最下位の差が 15 ± 3 秒', () => {
+    for (const difficulty of DIFFICULTIES) {
+      for (const seed of seeds) {
+        const times = resultFor(seed, difficulty).actualSeconds;
+        const spread = Math.max(...times) - Math.min(...times);
+        expect(spread, `${difficulty}/${seed}`).toBeGreaterThanOrEqual(12);
+        expect(spread, `${difficulty}/${seed}`).toBeLessThanOrEqual(18);
+      }
+    }
+  }, RACE_TIMEOUT_MS);
+
+  it('順位が目標タイム順とおおむね一致する', () => {
+    for (const seed of seeds) {
+      const result = resultFor(seed, 'normal');
+      expect(rankCorrelation(result.targetSeconds, result.standings)).toBeGreaterThanOrEqual(0.8);
+    }
+  }, RACE_TIMEOUT_MS);
+
+  it('ペースは常に上下限の内側にある', () => {
+    for (const difficulty of DIFFICULTIES) {
+      for (const seed of seeds) {
+        const [minimum, maximum] = resultFor(seed, difficulty).paceRange;
+        expect(minimum).toBeGreaterThanOrEqual(PACE.MIN);
+        expect(maximum).toBeLessThanOrEqual(PACE.MAX);
+      }
+    }
+  }, RACE_TIMEOUT_MS);
+
+  it('ペースの変化率が 1 秒あたり 0.1 を超えない（不自然な加減速の禁止）', () => {
+    for (const difficulty of DIFFICULTIES) {
+      for (const seed of seeds) {
+        expect(resultFor(seed, difficulty).maxPaceRate, `${difficulty}/${seed}`).toBeLessThanOrEqual(0.1);
+      }
+    }
+  }, RACE_TIMEOUT_MS);
+
+  it('実操作の自機はペース制御を受けない', () => {
+    const state = createRaceState({ seed: 20260812 });
+    const player = state.cars[0]!;
+    expect(player.targetRaceTicks).toBe(NO_TARGET);
+    for (let tick = 0; tick < 3000; tick++) {
+      stepRace(state, { steer: 0, throttle: 1, brake: 0 });
+      expect(player.pace).toBe(1);
+    }
+  });
+
+  it('同一シード・同一難易度なら完走ティックまで一致する（決定性）', () => {
+    const first = runRace(4417633, 'normal');
+    const second = runRace(4417633, 'normal');
+    expect(second.finishTicks).toEqual(first.finishTicks);
+  }, RACE_TIMEOUT_MS);
 });

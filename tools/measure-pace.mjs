@@ -16,11 +16,13 @@
  *      （要求の 0.95 は定数の値ではなく実測される比。§4.2）
  *   3. `REFERENCE_LAP_SECONDS` / `SECONDS_PER_PACE` — ペースを振り、ラップとの関係を最小二乗で
  *   4. `STANDING_START_SECONDS` — 立ち上がりの損（完走 − 飛び込み 3 周）
- *   5. 難易度ごとの目標タイム表と、それを達成するのに要るペース
+ *   5. 難易度ごとの目標タイム表と、それを達成するのに要るペース。
+ *      **要るペースが `PACE.MIN`〜`MAX` を外れたら異常終了する**（到達不能な目標を弾く）
  *
  * 現在の定数とずれていたら警告する。速度定数・コース・AI のライン計算を変えたら必ず流す。
  */
 import { stepRace, tickToSeconds } from '../src/game/sim/race.ts';
+import { PACE } from '../src/game/sim/ai.ts';
 import {
   BALANCE,
   DIFFICULTY,
@@ -170,11 +172,14 @@ console.log(`  REFERENCE_LAP_SECONDS  ${fixed(referenceLap)} s`);
 console.log(`  SECONDS_PER_PACE       ${fixed(slope)} s / ペース 1.0`);
 console.log(`  STANDING_START_SECONDS ${fixed(startLoss)} s`);
 consistent.push(report('STANDING_START_SECONDS', startLoss, BALANCE.STANDING_START_SECONDS, 0.05));
+consistent.push(report('REFERENCE_LAP_SECONDS', referenceLap, PACE.REFERENCE_LAP_SECONDS, 0.05));
+consistent.push(report('SECONDS_PER_PACE', slope, PACE.SECONDS_PER_PACE, 0.5));
 
 // ── 5. 難易度ごとの目標と必要ペース
 // 必要ペースは §2.5 の線形近似の逆写像。ペース制御（`updatePace`）はこれを
 // 先読みに使うだけで、誤差は閉ループが吸う
 const requiredPace = (lapSeconds) => 1 + (referenceLap - lapSeconds) / slope;
+const reachable = [];
 for (const difficulty of Object.keys(DIFFICULTY)) {
   console.log('');
   console.log(`■ 目標タイム（${difficulty}・ばらつき前）`);
@@ -182,8 +187,13 @@ for (const difficulty of Object.keys(DIFFICULTY)) {
   for (let entrant = 1; entrant < ENTRANT_COUNT; entrant++) {
     const raceSeconds = tickToSeconds(targetRaceTicksFor(entrant, difficulty, 0));
     const lapSeconds = (raceSeconds - startLoss) / LAP_COUNT;
+    const pace = requiredPace(lapSeconds);
+    // ばらつき（最大 +2 秒）で目標が緩む側なので、厳しいのは常にばらつき 0 のとき
+    if (pace < PACE.MIN || pace > PACE.MAX) {
+      reachable.push(`${difficulty} の entrant ${entrant} は必要ペース ${pace.toFixed(3)}（範囲 ${PACE.MIN}〜${PACE.MAX}）`);
+    }
     console.log(
-      `     ${entrant}     ${fixed(lapSeconds)} s  ${fixed(raceSeconds, 2)} s     ${requiredPace(lapSeconds).toFixed(3)}`,
+      `     ${entrant}     ${fixed(lapSeconds)} s  ${fixed(raceSeconds, 2)} s     ${pace.toFixed(3)}`,
     );
   }
   const leader = tickToSeconds(targetRaceTicksFor(1, difficulty, 0));
@@ -193,8 +203,10 @@ for (const difficulty of Object.keys(DIFFICULTY)) {
 }
 
 console.log('');
-if (consistent.includes(false)) {
-  console.error('★ 定数が実測とずれている。src/game/sim/ の定数を上の実測値で置き換えること。');
+for (const problem of reachable) console.error(`★ 到達できない目標: ${problem}`);
+
+if (reachable.length > 0 || consistent.includes(false)) {
+  console.error('★ 定数が実測とずれているか、達成できない目標がある。');
   process.exit(1);
 }
-console.log('定数は実測と一致している。');
+console.log('定数は実測と一致し、どの難易度の目標もペースの範囲内で達成できる。');
