@@ -16,7 +16,8 @@
  *      （要求の 0.95 は定数の値ではなく実測される比。§4.2）
  *   3. `REFERENCE_LAP_SECONDS` / `SECONDS_PER_PACE` — ペースを振り、ラップとの関係を最小二乗で
  *   4. `STANDING_START_SECONDS` — 立ち上がりの損（完走 − 飛び込み 3 周）
- *   5. 難易度ごとの目標タイム表と、それを達成するのに要るペース。
+ *   5. 難易度のアンカー（理想の走りと普通の走り）と、そこから決まる `leaderLapSeconds`
+ *   6. 難易度ごとの目標タイム表と、それを達成するのに要るペース。
  *      **要るペースが `PACE.MIN`〜`MAX` を外れたら異常終了する**（到達不能な目標を弾く）
  *
  * 現在の定数とずれていたら警告する。速度定数・コース・AI のライン計算を変えたら必ず流す。
@@ -28,6 +29,7 @@ import {
   DIFFICULTY,
   ENTRANT_COUNT,
   LAP_COUNT,
+  NO_TARGET,
   createRaceState,
   targetRaceTicksFor,
 } from '../src/game/sim/state.ts';
@@ -48,11 +50,15 @@ const SLOPE_FROM_PACE = 0.85;
  *
  * @param fromGrid 真ならグリッド（ポール）位置から。偽ならスタートライン上から
  */
-function soloRun(speedScale, pace, { laps = 3, fromGrid = false } = {}) {
+function soloRun(speedScale, pace, { laps = 3, fromGrid = false, reactionTicks = 0, lineBias = 0 } = {}) {
   const state = createRaceState({ seed: 20260812, autoPilot: true });
   const car = state.cars[0];
   car.speedScale = speedScale;
   car.pace = pace;
+  car.reactionTicks = reactionTicks;
+  car.lineBias = lineBias;
+  // ペース制御に上書きさせない。ここで測るのは「そのペースで走ると何秒か」なので
+  car.targetRaceTicks = NO_TARGET;
   state.cars.length = 0;
   state.cars.push(car);
   state.standingOrder.length = 0;
@@ -175,7 +181,26 @@ consistent.push(report('STANDING_START_SECONDS', startLoss, BALANCE.STANDING_STA
 consistent.push(report('REFERENCE_LAP_SECONDS', referenceLap, PACE.REFERENCE_LAP_SECONDS, 0.05));
 consistent.push(report('SECONDS_PER_PACE', slope, PACE.SECONDS_PER_PACE, 0.5));
 
-// ── 5. 難易度ごとの目標と必要ペース
+// ── 5. 難易度のアンカー（§2.6）
+// `leaderLapSeconds` は 2 つの実測アンカーから決める。**普通は仮のアンカー**であり、
+// プレイテストの実測に置き換える運用（§6 の調整手順）
+const ordinaryLap = soloRun(1, 0.9, { reactionTicks: 6, lineBias: 1.5 }).lapSeconds[1];
+const anchors = {
+  easy: ordinaryLap,
+  normal: (idealLap + ordinaryLap) / 2,
+  hard: referenceLap + 0.4,
+};
+console.log('');
+console.log('■ 難易度のアンカー（自機スペックで測った人間の走り）');
+console.log(`  理想（ペース 1.0・理想ライン）           ${fixed(idealLap)} s`);
+console.log(`  普通（ペース 0.90・反応 6・誤差 1.5 m）  ${fixed(ordinaryLap)} s ※プレイテストの実測に置き換える`);
+for (const difficulty of Object.keys(DIFFICULTY)) {
+  consistent.push(
+    report(`${difficulty} の leaderLapSeconds`, anchors[difficulty], DIFFICULTY[difficulty].leaderLapSeconds, 0.1),
+  );
+}
+
+// ── 6. 難易度ごとの目標と必要ペース
 // 必要ペースは §2.5 の線形近似の逆写像。ペース制御（`updatePace`）はこれを
 // 先読みに使うだけで、誤差は閉ループが吸う
 const requiredPace = (lapSeconds) => 1 + (referenceLap - lapSeconds) / slope;
