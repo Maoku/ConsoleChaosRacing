@@ -5,6 +5,7 @@ import {
   cornerSpeedLimit,
   gripAccel,
   steeringLimits,
+  topSpeedOf,
   type VehicleControl,
 } from './vehicle.js';
 
@@ -63,7 +64,7 @@ function targetSpeedFor(track: Track, car: CarState): number {
   // 路外に出ていても「本来のライン」を基準に計画する。路外のグリップで計画すると
   // 草地で止まってしまい、コースへ戻れなくなる（罰は物理側が与える）
   const grip = gripAccel(0) * AI.CORNER_SAFETY;
-  let target: number = VEHICLE.MAX_SPEED;
+  let target: number = topSpeedOf(car);
   for (let distance = 0; distance <= AI.SCAN_MAX; distance += AI.SCAN_STEP) {
     const sample = track.sampleAt(car.s + distance);
     const cornerLimit = cornerSpeedLimit(sample.curvature, grip);

@@ -11,7 +11,7 @@ import { arrangementFor } from './audio/score.js';
 import { createRaceSfx } from './audio/sfx.js';
 import { acceptsDriving, createFlow, stepFlow } from './flow/screens.js';
 import { createRacingActionMap, requestedGeneration } from './input/bindings.js';
-import { VEHICLE, type VehicleControl } from './sim/vehicle.js';
+import { topSpeedOf, type VehicleControl } from './sim/vehicle.js';
 import { buildGenerationView } from './view/index.js';
 import { cycleCameraView, type CameraViewId } from './view/shared/camera.js';
 import { createDisplayLatch } from './view/shared/display-state.js';
@@ -99,7 +99,7 @@ export const racingModule: GameModule = {
         const driving = acceptsDriving(flow.screen) && !flow.paused;
         engineSound.update(context.audio, context.generation.profile, {
           speed: player.speed,
-          maxSpeed: VEHICLE.MAX_SPEED,
+          maxSpeed: topSpeedOf(player),
           throttle: driving ? player.throttleInput : 0,
           offTrack: player.offTrack,
         });

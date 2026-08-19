@@ -147,6 +147,25 @@ export function steeringLimits(
   return { grip, authority, gripYawRate: speed > 0.5 ? grip / speed : authority };
 }
 
+/**
+ * その車の最高速度 [m/s]。`VEHICLE.MAX_SPEED` を直接読まず必ずここを通す。
+ * 敵車は `speedScale` ぶん低い（バランス改修計画 §4.2）。
+ */
+export function topSpeedOf(car: CarState): number {
+  return VEHICLE.MAX_SPEED * car.speedScale;
+}
+
+/**
+ * その車の低速時加速度 [m/s²]。
+ *
+ * `MAX_SPEED` と揃えて同じ倍率を掛けるのが要点で、`dv/dt = kA(1 − v/kV)` は
+ * `v → kv` で元の式に一致する。つまり**直線のどの瞬間でも速度がちょうど k 倍**の車になり、
+ * 「終速の上限」ではなく「速度そのもの」で 0.95 が効く。
+ */
+export function accelOf(car: CarState): number {
+  return VEHICLE.ACCEL * car.speedScale;
+}
+
 /** 曲率 κ のコーナーを曲がりきれる最大速度 [m/s] */
 export function cornerSpeedLimit(curvature: number, grip: number = VEHICLE.GRIP_ACCEL): number {
   const magnitude = Math.abs(curvature);
@@ -179,12 +198,12 @@ export function stepVehicle(
   car.brakeInput = brake;
 
   // ── 速度: 目標速度への一次遅れ ＋ 抵抗
-  const targetSpeed = VEHICLE.MAX_SPEED * throttle;
+  const targetSpeed = topSpeedOf(car) * throttle;
   let acceleration: number;
   if (brake > 0) {
     acceleration = -VEHICLE.BRAKE_ACCEL * brake;
   } else if (targetSpeed > car.speed) {
-    acceleration = VEHICLE.ACCEL * (1 - car.speed / VEHICLE.MAX_SPEED);
+    acceleration = accelOf(car) * (1 - car.speed / topSpeedOf(car));
   } else {
     acceleration = -VEHICLE.COAST_DRAG;
   }

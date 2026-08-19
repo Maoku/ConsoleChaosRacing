@@ -17,6 +17,24 @@ export const LAP_COUNT = 3;
 /** カウントダウンの長さ [tick]。3・2・1・GO の 4 秒 */
 export const COUNTDOWN_TICKS = 240;
 
+/**
+ * バランス定数（バランス改修計画 §4.2 / §4.3）。
+ *
+ * ここにある数はすべて**現物のシムを回して測った値**で、コース形状と車両定数に依存する。
+ * 手で書き換えず `npm run measure:pace` の出力で置き換えること。
+ */
+export const BALANCE = {
+  /**
+   * 敵車の速度モデル（最高速度と加速度の両方）に掛かる倍率。
+   *
+   * **要求は「走行中に実際に出る最高速度が自機の 0.95 倍」**であり、0.95 は
+   * この定数ではなく**その結果として実測される比**である。最長の直線が 434 m しかない
+   * このコースでは `MAX_SPEED` は終速の上限として一度も効かず、定数を 0.95 倍しても
+   * 実測比は 0.971 にしかならない。二分探索で実測比が 0.950 になる値がこれ。
+   */
+  SPEED_SCALE: 0.933,
+} as const;
+
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
 export interface CarState {
@@ -60,6 +78,13 @@ export interface CarState {
   lateralAccel: number;
   /** 前後加速度 [m/s²]。車体ピッチの元 */
   longitudinalAccel: number;
+
+  // ── 車ごとの能力（生成時に決まり、以後変わらない）
+  /**
+   * 速度モデル全体に掛かる倍率。自機は 1、敵車は `BALANCE.SPEED_SCALE`。
+   * `topSpeedOf()` / `accelOf()` からだけ読む
+   */
+  readonly speedScale: number;
 
   // ── AI の個体差（生成時に決まり、以後変わらない）
   /** 到達速度の倍率 0.93..1.0 */
@@ -113,6 +138,8 @@ function createCar(entrant: number, track: Track, seed: number): CarState {
     brakeInput: 0,
     lateralAccel: 0,
     longitudinalAccel: 0,
+    // 自機（0）は自機のスペックのまま。敵車だけが 0.95 の実測比まで落ちる
+    speedScale: entrant === 0 ? 1 : BALANCE.SPEED_SCALE,
     // 自機（0）は個体差を持たない。AI だけがばらつく
     skill: entrant === 0 ? 1 : 0.93 + rng.next() * 0.07,
     lineBias: entrant === 0 ? 0 : (rng.next() - 0.5) * 1.6,
