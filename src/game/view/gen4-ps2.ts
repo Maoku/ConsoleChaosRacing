@@ -10,7 +10,12 @@ import type {
 } from '@console-chaos/engine';
 
 import type { ViewContext } from './context.js';
-import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
+import {
+  carModelFor,
+  carModelScale,
+  carTextureFor,
+  carTransform,
+} from './shared/car-model.js';
 import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { cockpitSprites } from './shared/cockpit.js';
 import { ENVIRONMENT_MAP, SKYLINE, SUN_DIRECTION, equirectU } from './shared/environment.js';
@@ -144,10 +149,15 @@ const KEY_LIGHT = { height: 40, radius: 44, color: '#fff2d8', intensity: 0.3 } a
  * （2 三角形）なので、費用はドローコール 1 つぶんしかない。
  *
  * 四角形は**回転しない**（影の行列は平行移動と拡大だけ）ので、正方形に採る。
- * 車の footprint は 1.9 × 0.88 m。1.0 m 角なら、どの向きでも車体の下から
- * はみ出す量が最小になる（車幅より少しだけ広いのは、タイヤのぶん）。
+ * 一辺は**車体の倍率と一緒に伸びる**（11-5）。素のモデルの footprint 1.9 × 0.88 m に
+ * 対して 1.0 m 角だったので、実寸（4.22 × 1.95 m）では 2.21 m 角になる。
+ * どの向きでも車体の下からはみ出す量が最小になる大きさ（車幅より少しだけ広いのは
+ * タイヤのぶん）という選び方はそのまま保たれる。
+ *
+ * **全長からは採らない。** 4.2 m 角にすると回転しない四角形が車体の左右へ
+ * 1.1 m ずつはみ出し、影が車の 2 倍の幅で路面に落ちる。
  */
-const SHADOW_HALF = 0.5;
+const SHADOW_HALF_RATIO = 0.5;
 
 /**
  * ライバルを描く上限距離 [m]。フォグが 95% を超えるとほぼ背景と区別が付かない。
@@ -301,7 +311,7 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
   };
   frame.materials.push(carMaterial);
 
-  // 影を落とすためだけのメッシュが使うマテリアル。全画素を捨てる（`SHADOW_HALF`）
+  // 影を落とすためだけのメッシュが使うマテリアル。全画素を捨てる（`SHADOW_HALF_RATIO`）
   const shadowMaterial: MaterialCommand = {
     id: `car-shadow-${generation}`,
     baseColorTexture: carTextureFor(generation),
@@ -310,6 +320,8 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     generations: [generation],
   };
   frame.materials.push(shadowMaterial);
+
+  const shadowHalf = SHADOW_HALF_RATIO * carModelScale(generation);
 
   for (const car of display.cars) {
     // 車内からの視点では自機を積まない。**影専用メッシュも積まない** —
@@ -323,7 +335,7 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     );
     if (car.entrant !== PLAYER_ENTRANT && away > CAR_DRAW_DISTANCE) continue;
 
-    const transform = carTransform(track, car);
+    const transform = carTransform(track, car, generation);
     frame.meshes.push({
       id: `car-${generation}-${car.entrant}`,
       geometry: TRACK_GEOMETRY,
@@ -337,7 +349,7 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
     frame.meshes.push({
       id: `car-shadow-${generation}-${car.entrant}`,
       geometry: TRACK_GEOMETRY,
-      transform: { position: transform.position, scale: [SHADOW_HALF, 1, SHADOW_HALF] },
+      transform: { position: transform.position, scale: [shadowHalf, 1, shadowHalf] },
       color: '#000000',
       material: shadowMaterial.id,
       castShadow: true,

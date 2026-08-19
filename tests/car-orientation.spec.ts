@@ -83,7 +83,7 @@ describe('車モデルの向き', () => {
   it('車は路面の上に載る（地面へ埋まらない）', () => {
     const state = raceAfter(1500);
     for (const car of state.cars) {
-      const transform = carTransform(TRACK, car);
+      const transform = carTransform(TRACK, car, 'PS1');
       const surface = TRACK.toWorld(car.s, car.lateral);
       // 車体の原点は上下の中央にあるので、路面より上にある
       expect(transform.position[1]).toBeGreaterThan(surface[1]);

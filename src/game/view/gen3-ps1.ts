@@ -192,7 +192,7 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
       id: `car-${generation}-${car.entrant}`,
       geometry: TRACK_GEOMETRY,
       asset: carModel.asset,
-      transform: carTransform(track, car),
+      transform: carTransform(track, car, generation),
       color: ENTRANT_COLORS[car.entrant % ENTRANT_COLORS.length] ?? '#ffffff',
       material: carMaterial.id,
       orderTableIndex: CAR_SLOT,

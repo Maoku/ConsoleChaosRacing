@@ -4,6 +4,9 @@ import { join } from 'node:path';
 import { HARDWARE_GENERATION_PROFILES, type LightCommand } from '@console-chaos/engine';
 import { describe, expect, it } from 'vitest';
 
+import { VEHICLE } from '../src/game/sim/vehicle.js';
+import { carModelScale } from '../src/game/view/shared/car-model.js';
+
 import { MANIFEST } from '../src/assets/manifest.js';
 import { ENTRANT_COUNT } from '../src/game/sim/state.js';
 import { cameraAngles, skylineBackgrounds } from '../src/game/view/gen4-ps2.js';
@@ -261,21 +264,26 @@ describe('第4世代の環境', () => {
       expect(shadows).toHaveLength(ENTRANT_COUNT);
 
       for (const car of cars) {
-        // 車体に scale が入るとモデルが歪む。影の大きさは影用メッシュが持つ
-        expect(car.transform.scale, `${car.id} に scale がある`).toBeUndefined();
+        // 拡大は 3 軸とも同じ倍率（11-5）。車の形は変えず、実寸へ合わせるだけ。
+        // 軸ごとに違う値が入るとモデルが歪む
+        const scale = car.transform.scale!;
+        expect(scale[0], `${car.id} の倍率`).toBeCloseTo(carModelScale('PS2'), 9);
+        expect(scale[1]).toBe(scale[0]);
+        expect(scale[2]).toBe(scale[0]);
         expect(car.castShadow).toBeFalsy();
       }
       for (const shadow of shadows) {
         expect(shadow.castShadow).toBe(true);
         expect(shadow.groundY).toBeDefined();
         expect(shadow.asset).toBeUndefined();
-        // 影の四角形は回転しないので正方形。車の footprint（1.9 × 0.88 m）と同じ桁で、
-        // 全長より小さい ＝ どの向きでも車体の下からはみ出しすぎない
+        // 影の四角形は回転しないので正方形。実寸の車の footprint（4.22 × 1.95 m）に
+        // 対して車幅より少しだけ広く、**全長より小さい** ＝ どの向きでも
+        // 車体の下からはみ出しすぎない
         const scale = shadow.transform.scale!;
         expect(scale[0]).toBe(scale[2]);
         const span = scale[0]! * 2;
-        expect(span).toBeGreaterThan(0.6);
-        expect(span).toBeLessThan(1.2);
+        expect(span).toBeGreaterThan(VEHICLE.CAR_WIDTH);
+        expect(span).toBeLessThan(VEHICLE.CAR_LENGTH);
       }
     });
 

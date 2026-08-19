@@ -7,6 +7,7 @@ import {
 } from '@console-chaos/engine';
 
 import type { Track } from '../../sim/track.js';
+import { VEHICLE } from '../../sim/vehicle.js';
 import type { DisplayCar } from './display-state.js';
 
 /**
@@ -20,6 +21,18 @@ import type { DisplayCar } from './display-state.js';
 export interface CarModel {
   readonly asset: string;
   readonly texture: string;
+  /**
+   * 素のモデルの寸法 [m]。`public/assets/car-conversion.json` の bounds を写したもの。
+   * **手で書いた値ではない**ので、モデルを差し替えたら `npm run prepare:cars` の
+   * 出力から採り直す（`car-orientation.spec.ts` が JSON と突き合わせる）。
+   */
+  readonly bounds: {
+    /** 前後（局所 X）*/ readonly length: number;
+    /** 上下（局所 Y）*/ readonly height: number;
+    /** 左右（局所 Z）*/ readonly width: number;
+    /** 原点から車体の最下点まで [m]。路面に載せる持ち上げ量の元 */
+    readonly bottom: number;
+  };
 }
 
 /** 第1・第2世代はスプライトなのでモデルを持たない */
@@ -29,12 +42,39 @@ export const CAR_MODELS: GenerationVariant<CarModel | null> = defineGenerationVa
   PS1: {
     asset: 'assets/gen3/models/car.glb',
     texture: 'assets/gen3/textures/car_base_color.png',
+    bounds: { length: 1.878669, height: 0.481409, width: 0.86497, bottom: 0.248532 },
   },
   PS2: {
     asset: 'assets/gen4/models/car.glb',
     texture: 'assets/gen4/textures/car_base_color.png',
+    bounds: { length: 1.906066, height: 0.497064, width: 0.880626, bottom: 0.248532 },
   },
 });
+
+/**
+ * 素のモデルを実寸にする倍率（実装計画 11-5 / R-5 / D-11）。
+ *
+ * **素のモデルは 2D スプライトの車の 44 %（幅）しか無かった。** 同じ 1 つの
+ * シミュレーションを描いているのに、世代で車の実寸が違っていたということで、
+ * 「第3・第4世代の自機が小さい」原因はカメラではなくこれだった。
+ * 12 m のコース幅に対し、素のままの 3D の車は 13.8 台が横に並べる大きさである。
+ *
+ * 値は**手で書かず、モデルの実測幅から導く**。車幅（`VEHICLE.CAR_WIDTH`）に
+ * 合わせると全長は 4.22〜4.24 m になり、衝突判定の 4.2 m ともほぼ一致する。
+ */
+export function carModelScale(generation: GenerationId): number {
+  const model = carModelFor(generation);
+  return model ? VEHICLE.CAR_WIDTH / model.bounds.width : 1;
+}
+
+/**
+ * 車体を路面へ載せるための持ち上げ [m]。**倍率と一緒に伸びる。**
+ * 原点は車体の上下の中央にあるので、最下点ぶんだけ持ち上げれば接地する。
+ */
+export function carGroundOffset(generation: GenerationId): number {
+  const model = carModelFor(generation);
+  return model ? model.bounds.bottom * carModelScale(generation) : 0;
+}
 
 export function carModelFor(generation: GenerationId): CarModel | null {
   return generationValue(CAR_MODELS, generation);
@@ -101,19 +141,25 @@ export function carRotationY(worldHeading: number): number {
   return CAR_YAW_OFFSET + CAR_YAW_SIGN * worldHeading;
 }
 
-/** 車体の原点は上下の中央にあるので、路面に載せるぶん持ち上げる [m] */
-export const CAR_GROUND_OFFSET = 0.25;
-
 /** 進行方向（コース接線に車のヨー角を足したもの）[rad] */
 export function carWorldHeading(track: Track, car: DisplayCar): number {
   return track.sampleAt(car.s).heading + car.yaw;
 }
 
-/** 車 1 台ぶんの配置。`rotationY` 以外の回転は指定できないので、車体の傾きは出せない */
-export function carTransform(track: Track, car: DisplayCar): TransformCommand {
+/**
+ * 車 1 台ぶんの配置。`rotationY` 以外の回転は指定できないので、車体の傾きは出せない。
+ * 拡大は 3 軸とも同じ倍率 — 車の形は変えず、実寸へ合わせるだけである。
+ */
+export function carTransform(
+  track: Track,
+  car: DisplayCar,
+  generation: GenerationId,
+): TransformCommand {
   const world = track.toWorld(car.s, car.lateral);
+  const scale = carModelScale(generation);
   return {
-    position: [world[0], world[1] + CAR_GROUND_OFFSET, world[2]],
+    position: [world[0], world[1] + carGroundOffset(generation), world[2]],
     rotationY: carRotationY(carWorldHeading(track, car)),
+    scale: [scale, scale, scale],
   };
 }
