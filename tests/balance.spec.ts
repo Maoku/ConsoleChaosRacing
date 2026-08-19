@@ -159,6 +159,8 @@ interface RaceResult {
   /** ペースの変化率の最大 [1/s]。GO の初期化は含めない */
   readonly maxPaceRate: number;
   readonly finishTicks: number[];
+  /** 車どうしが接触したティック数（11-8）。目標の達成度に効くので一緒に測る */
+  readonly contactTicks: number;
 }
 
 /** 完走まで回して、目標に対する結果を集める */
@@ -168,9 +170,11 @@ function runRace(seed: number, difficulty: Difficulty): RaceResult {
   let paceMin = Number.POSITIVE_INFINITY;
   let paceMax = Number.NEGATIVE_INFINITY;
   let maxPaceRate = 0;
+  let contactTicks = 0;
 
   while (state.phase !== 'finished' && state.tick < 60 * 60 * 20) {
     stepRace(state);
+    if (state.cars.some((car) => car.hitKind === 'car')) contactTicks += 1;
     for (const car of state.cars) {
       if (car.targetRaceTicks === NO_TARGET || car.finished) continue;
       paceMin = Math.min(paceMin, car.pace);
@@ -192,6 +196,7 @@ function runRace(seed: number, difficulty: Difficulty): RaceResult {
     paceRange: [paceMin, paceMax],
     maxPaceRate,
     finishTicks: state.cars.map((car) => car.finishTick),
+    contactTicks,
   };
 }
 
@@ -236,6 +241,20 @@ describe('バランス: 目標タイムの達成（R-2 d）', () => {
         }
       }
     }
+  }, RACE_TIMEOUT_MS);
+
+  /**
+   * 車どうしの衝突（11-3）は目標タイムの達成度に効く。**接触は実際に起きていて、
+   * それでも目標に収まっている**ことをここで固定する（11-8・§7 リスク 1）。
+   *
+   * 接触が 0 になったら、上の許容範囲は「衝突が無い世界」の値でしかない。
+   */
+  it('車どうしの接触が起きたうえで目標に収まっている（11-8）', () => {
+    let total = 0;
+    for (const difficulty of DIFFICULTIES) {
+      for (const seed of seeds) total += resultFor(seed, difficulty).contactTicks;
+    }
+    expect(total, 'デモのレースで接触が 1 度も起きていない').toBeGreaterThan(0);
   }, RACE_TIMEOUT_MS);
 
   it('実測のトップと最下位の差が 15 ± 3 秒', () => {
