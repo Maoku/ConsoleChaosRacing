@@ -7,6 +7,7 @@ import {
   type SpriteCommand,
 } from '@console-chaos/engine';
 
+import { ENTRANT_COUNT } from '../../sim/state.js';
 import type { Track } from '../../sim/track.js';
 import type { DisplayCar } from './display-state.js';
 import type { RoadView } from './projection.js';
@@ -17,37 +18,81 @@ import { PLAYER_ENTRANT } from './variants.js';
  *
  * アトラスは 3 列 × 2 行、1 セル 128²。列は左傾き / 正面 / 右傾き、
  * 行は黄（自機）と赤（ライバル）。第1世代は同時 25 色なので、
- * **8 台を色分けせず「自機は黄・ライバルは赤」の 2 色に留める**のが実機の作法に合う
- * （ミニマップのマーカーが 2 色なのと同じ理由。§3.6）。
+ * **第1世代は 8 台を色分けせず「自機は黄・ライバルは赤」の 2 色に留める**のが実機の
+ * 作法に合う（同時 25 色の契約。ミニマップのマーカーが 2 色なのと同じ理由。§3.6）。
+ * **第2世代は 8 行 ＝ 8 パレット**で、絵は 1 つのまま色だけが 8 通りになる（11-1・D-1）。
  *
  * 描くのは `tools/build-car-sprites.mjs` が整形した `car_frames.png` のほうで、
  * 同梱の `cars.png` は入力として残してある。元の絵はセル境界を 2 px はみ出していて、
  * 正面のセルを描くと両端に隣の車の破片が出るため（ツールの冒頭に詳しく書いた）。
  */
 
-/** 整形後のアトラスの形。ツールとビューが共有する */
-export const CAR_SPRITE_GEOMETRY = {
-  columns: 3,
-  rows: 2,
+/**
+ * 整形後のアトラスの形。ツールとビューが共有する。
+ *
+ * 行の意味は世代で変わる（`perEntrant`）。第2世代は実機の「1 タイルセット + 8 パレット」に
+ * 対応させ、**8 行すべてが同じインデックス地図**で、違うのはパレットだけになる。
+ */
+export interface CarSpriteLayout {
+  readonly columns: number;
+  readonly rows: number;
   /** 1 セルの一辺 [px] */
-  cell: 128,
+  readonly cell: number;
   /** 接地線（絵の下端）をセルのどこへ揃えるか（上端 0・下端 1） */
-  groundFraction: 0.86,
+  readonly groundFraction: number;
   /**
    * 絵そのものの高さがセルに占める割合（切り上げ）。
    * 走査線制限は**絵のある行だけ**を数える（セルの透明部分は実機ではタイルを消費しない）。
    */
+  readonly heightFraction: number;
+  /**
+   * 真なら 1 行 ＝ 1 エントラント（パレット替え）。偽なら自機／ライバルの 2 行。
+   * 第1世代を 2 行に留めるのは同時 25 色の契約による（実装計画 D-2）。
+   */
+  readonly perEntrant: boolean;
+}
+
+/** 世代で変わらない部分。列の並びも接地線も整形ツールが揃える */
+const SHAPE = {
+  columns: 3,
+  cell: 128,
+  groundFraction: 0.86,
   heightFraction: 0.44,
 } as const;
 
+export const CAR_SPRITE_GEOMETRY: GenerationVariant<CarSpriteLayout | null> =
+  defineGenerationVariant({
+    FC: { ...SHAPE, rows: 2, perEntrant: false },
+    // 行数は出走台数そのもの。台数を変えたときにアトラスの焼き直しを忘れられない
+    SFC: { ...SHAPE, rows: ENTRANT_COUNT, perEntrant: true },
+    PS1: null,
+    PS2: null,
+  });
+
+export function carSpriteLayoutFor(generation: GenerationId): CarSpriteLayout | null {
+  return generationValue(CAR_SPRITE_GEOMETRY, generation);
+}
+
 /** 整形の入出力。`manifest.ts` は `to` のほうを登録する */
 export const CAR_SPRITE_SOURCES = [
-  { from: 'assets/gen1/sprites/cars.png', to: 'assets/gen1/sprites/car_frames.png' },
-  { from: 'assets/gen2/sprites/cars.png', to: 'assets/gen2/sprites/car_frames.png' },
-] as const;
+  {
+    generation: 'FC',
+    from: 'assets/gen1/sprites/cars.png',
+    to: 'assets/gen1/sprites/car_frames.png',
+  },
+  {
+    generation: 'SFC',
+    from: 'assets/gen2/sprites/cars.png',
+    to: 'assets/gen2/sprites/car_frames.png',
+  },
+] as const satisfies readonly {
+  generation: GenerationId;
+  from: string;
+  to: string;
+}[];
 
 export interface CarSpriteRow {
-  /** 行の先頭セル番号。+0 が左傾き、+1 が正面、+2 が右傾き */
+  /** 行の先頭セル番号。+0 が右コーナー、+1 が正面、+2 が左コーナー */
   readonly firstCell: number;
   /** 接地線がセルのどこにあるか（上端 0・下端 1） */
   readonly groundFraction: number;
@@ -59,33 +104,43 @@ export interface CarSpriteAtlas {
   readonly url: string;
   /** 1 セルが表す世界の一辺 [m]。正面の車の全幅が 1.95 m になるよう決めてある */
   readonly cellMeters: number;
-  readonly player: CarSpriteRow;
-  readonly rival: CarSpriteRow;
+  readonly layout: CarSpriteLayout;
 }
-
-/** 整形後はどのセルも接地線と絵の高さが揃うので、行ごとの違いはセル番号だけになる */
-const ROW = {
-  firstCell: 0,
-  groundFraction: CAR_SPRITE_GEOMETRY.groundFraction,
-  heightFraction: CAR_SPRITE_GEOMETRY.heightFraction,
-} as const;
 
 export const CAR_SPRITES: GenerationVariant<CarSpriteAtlas | null> = defineGenerationVariant({
   FC: {
     url: CAR_SPRITE_SOURCES[0].to,
     cellMeters: 3.08,
-    player: { ...ROW, firstCell: 0 },
-    rival: { ...ROW, firstCell: 3 },
+    layout: CAR_SPRITE_GEOMETRY.FC!,
   },
   SFC: {
     url: CAR_SPRITE_SOURCES[1].to,
     cellMeters: 3.01,
-    player: { ...ROW, firstCell: 0 },
-    rival: { ...ROW, firstCell: 3 },
+    layout: CAR_SPRITE_GEOMETRY.SFC!,
   },
   PS1: null,
   PS2: null,
 });
+
+/**
+ * その車が使う行。パレット替えを持たない世代は自機／ライバルの 2 行に落とす（D-2）。
+ *
+ * **ここが「1 台 = 1 パレット」の唯一の入口**で、行の意味を知っているのはこの関数だけになる。
+ */
+export function spriteRowFor(atlas: CarSpriteAtlas, entrant: number): number {
+  if (!atlas.layout.perEntrant) return entrant === PLAYER_ENTRANT ? 0 : 1;
+  return Math.min(atlas.layout.rows - 1, Math.max(0, entrant));
+}
+
+/** 行 → セルの起点と接地線。整形後はどの行も接地線と絵の高さが揃う */
+export function carSpriteRow(atlas: CarSpriteAtlas, entrant: number): CarSpriteRow {
+  const { columns, groundFraction, heightFraction } = atlas.layout;
+  return {
+    firstCell: spriteRowFor(atlas, entrant) * columns,
+    groundFraction,
+    heightFraction,
+  };
+}
 
 export function carSpriteAtlasFor(generation: GenerationId): CarSpriteAtlas | null {
   return generationValue(CAR_SPRITES, generation);
@@ -195,7 +250,7 @@ function place(
   isPlayer: boolean,
 ): CarSpritePlacement {
   const { view, track, atlas } = options;
-  const row = isPlayer ? atlas.player : atlas.rival;
+  const row = carSpriteRow(atlas, car.entrant);
   const size = (atlas.cellMeters * view.camera.focal) / distance;
   const ground = view.rowAtDistance(distance);
   const x = view.centerXAt(distance) + car.lateral * view.scaleAt(distance);
@@ -258,7 +313,7 @@ export function carSpriteCommand(
   color = '#ffffff',
 ): SpriteCommand {
   const snap = Math.max(1, profile.video.tileSnap);
-  const row = placement.isPlayer ? atlas.player : atlas.rival;
+  const row = carSpriteRow(atlas, placement.entrant);
   const ground = placement.position[1] + (row.groundFraction - 0.5) * placement.size;
   const snappedX = Math.round(placement.position[0] / snap) * snap;
   const snappedGround = Math.round(ground / snap) * snap;

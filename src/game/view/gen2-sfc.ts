@@ -6,6 +6,7 @@ import { backdropCommands, backdropFor } from './shared/backdrop.js';
 import {
   carSpriteAtlasFor,
   carSpriteCommand,
+  carSpriteRow,
   playerPlacement,
   rivalPlacements,
   scanlineItem,
@@ -203,7 +204,7 @@ function carEntry(
   generation: ViewContext['generation'],
 ): SpriteEntry {
   const sprite = carSpriteCommand(placement, options.atlas, options.profile, generation);
-  const row = placement.isPlayer ? options.atlas.player : options.atlas.rival;
+  const row = carSpriteRow(options.atlas, placement.entrant);
   return {
     ...scanlineItem(sprite, row, placement.entrant),
     sprites: [shadowSprite(placement, options, generation), sprite],
@@ -222,7 +223,7 @@ function shadowSprite(
   options: CarPlacementOptions,
   generation: ViewContext['generation'],
 ): SpriteCommand {
-  const row = placement.isPlayer ? options.atlas.player : options.atlas.rival;
+  const row = carSpriteRow(options.atlas, placement.entrant);
   const ground = placement.position[1] + (row.groundFraction - 0.5) * placement.size;
   const width = placement.size * SHADOW_WIDTH;
   return {

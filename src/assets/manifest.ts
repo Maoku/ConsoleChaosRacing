@@ -201,11 +201,12 @@ export const MANIFEST: RenderAssetManifest = {
   atlases: [
     // 生成物（tools/build-car-sprites.mjs・フェーズ 3）。同梱の cars.png は
     // 絵がセル境界をはみ出しており、正面のセルに隣の車が写り込む
-    ...CAR_SPRITE_SOURCES.map((source) => ({
-      url: source.to,
-      columns: CAR_SPRITE_GEOMETRY.columns,
-      rows: CAR_SPRITE_GEOMETRY.rows,
-    })),
+    // 行数は世代で違う（第2世代だけ 1 台 1 パレットの 8 行・11-1）ので、
+    // 形は世代テーブルから引く
+    ...CAR_SPRITE_SOURCES.map((source) => {
+      const layout = CAR_SPRITE_GEOMETRY[source.generation]!;
+      return { url: source.to, columns: layout.columns, rows: layout.rows };
+    }),
     // 生成物（tools/build-scenery-sprites.mjs・フェーズ 8-6）。
     // 4 世代が同じ `sceneryObjects()` を読むが、擬似3D の 2 世代だけがスプライトで置く
     ...sceneryAtlases,

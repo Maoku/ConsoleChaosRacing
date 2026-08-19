@@ -11,6 +11,7 @@ import { backdropCommands, backdropFor } from './shared/backdrop.js';
 import {
   carSpriteAtlasFor,
   carSpriteCommand,
+  carSpriteRow,
   playerPlacement,
   rivalPlacements,
   scanlineItem,
@@ -120,7 +121,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
     generation,
   );
   entries.push({
-    ...scanlineItem(playerSprite, atlas.player, player.entrant),
+    ...scanlineItem(playerSprite, carSpriteRow(atlas, player.entrant), player.entrant),
     sprites: [playerSprite],
   });
 
@@ -138,7 +139,10 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
 
   for (const rival of rivalPlacements(placement, display.cars, player)) {
     const sprite = carSpriteCommand(rival, atlas, profile, generation);
-    entries.push({ ...scanlineItem(sprite, atlas.rival, rival.entrant), sprites: [sprite] });
+    entries.push({
+      ...scanlineItem(sprite, carSpriteRow(atlas, rival.entrant), rival.entrant),
+      sprites: [sprite],
+    });
   }
 
   // 背景オブジェクト（8-6）は**いちばん後ろに登録する** ＝ 走査線が混んだときに

@@ -24,13 +24,10 @@ import { decodePng } from '../tools/lib/png.mjs';
  * ミニマップの俯瞰図（`build-minimap.mjs`）が `flipVertical()` しているのと同じ理由。
  */
 
-const { columns, rows, cell, groundFraction, heightFraction } = CAR_SPRITE_GEOMETRY;
 const THRESHOLDS = STEER_FRAME.FC;
-/** 描画されたスプライトの上端から見た接地線の行 */
-const GROUND_ROW = Math.round(groundFraction * cell);
 const OPAQUE = 8;
 
-function loadAtlas(url: string) {
+function loadAtlas(url: string, cell: number) {
   const image = decodePng(readFileSync(join(process.cwd(), 'public', url)));
   return {
     image,
@@ -84,11 +81,18 @@ function car(values: Partial<DisplayCar>): DisplayCar {
  * 赤く光っている画素はテールランプだけなので、その重心がそのまま「車の後ろが
  * セルのどちら寄りに写っているか」になる。後ろが左に寄っていれば、ノーズは右。
  *
- * 自機の行（黄色）で測る。ライバルの行は車体が赤くランプと見分けが付かないが、
- * 元絵の列は 2 行で共通なので片方を確かめれば足りる。
+ * 行 0（自機・黄色）で測る。赤い車体の行はランプと見分けが付かないが、
+ * 元絵の列はどの行でも共通なので 1 行を確かめれば足りる。
+ *
+ * 第2世代のパレット替え（11-1）でも**灯火は共有色**なので、行 0 の車体が黄でも
+ * テールランプは赤いまま残る。塗装と共有部品の切り分けは「元絵の自機の行と
+ * ライバルの行で色が変わるか」で決まっており、灯火は 2 行で同じ色だからである。
  */
-function rearDirection(image: ReturnType<typeof decodePng>, column: number): number {
-  const { cell } = CAR_SPRITE_GEOMETRY;
+function rearDirection(
+  image: ReturnType<typeof decodePng>,
+  column: number,
+  cell: number,
+): number {
   const left = column * cell;
   let weighted = 0;
   let total = 0;
@@ -109,7 +113,12 @@ function rearDirection(image: ReturnType<typeof decodePng>, column: number): num
 describe('車スプライトのアトラス', () => {
   for (const source of CAR_SPRITE_SOURCES) {
     describe(source.to, () => {
-      const atlas = loadAtlas(source.to);
+      // 行の意味は世代で変わる（第2世代だけ 1 台 1 パレットの 8 行・11-1）
+      const { columns, rows, cell, groundFraction, heightFraction } =
+        CAR_SPRITE_GEOMETRY[source.generation]!;
+      /** 描画されたスプライトの上端から見た接地線の行 */
+      const GROUND_ROW = Math.round(groundFraction * cell);
+      const atlas = loadAtlas(source.to, cell);
 
       it('セルの升目どおりの大きさで焼かれている', () => {
         expect(atlas.image.width).toBe(cell * columns);
@@ -142,7 +151,7 @@ describe('車スプライトのアトラス', () => {
       });
 
       it('列 0 は車の後ろが左に写る（＝ノーズが右／右コーナー）', () => {
-        const rear = [0, 1, 2].map((column) => rearDirection(atlas.image, column));
+        const rear = [0, 1, 2].map((column) => rearDirection(atlas.image, column, cell));
         expect(rear[0]!, '列 0 のノーズが右を向いていない').toBeLessThan(-8);
         expect(Math.abs(rear[1]!), '列 1 は正面のはず').toBeLessThan(4);
         expect(rear[2]!, '列 2 のノーズが左を向いていない').toBeGreaterThan(8);
