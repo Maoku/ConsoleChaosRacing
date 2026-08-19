@@ -9,6 +9,7 @@ import {
 import { createEngineVoiceScheduler } from './audio/engine-sound.js';
 import { arrangementFor } from './audio/score.js';
 import { createRaceSfx } from './audio/sfx.js';
+import { anyInputIn, createAttract, stepAttract } from './flow/attract.js';
 import { acceptsDriving, createFlow, stepFlow } from './flow/screens.js';
 import { createRacingActionMap, requestedGeneration } from './input/bindings.js';
 import { topSpeedOf, type VehicleControl } from './sim/vehicle.js';
@@ -29,6 +30,12 @@ export const racingModule: GameModule = {
   async create(context: GameContext): Promise<GameInstance> {
     const actions = createRacingActionMap();
     const flow = createFlow();
+    /**
+     * タイトルのアトラクト（11-6）。無操作 5 秒で世代の巡回が始まり、
+     * 以後 5 秒ごとに次の世代へ移る。状態は 2 つの数だけで、
+     * 「そろそろ次へ」と言うのが `stepAttract()` の役目である
+     */
+    const attract = createAttract();
     const display = createDisplayLatch();
     let seconds = 0;
     /**
@@ -69,6 +76,17 @@ export const racingModule: GameModule = {
         // どちらも同じ経路を通るので、切替演出も BGM の位相保存も追加のコストが無い
         if (input.genNext.pressed) context.generation.cycle(1);
         if (input.genPrev.pressed) context.generation.cycle(-1);
+
+        // タイトルの放置で世代を巡回する（11-6）。**手動の Q / E と同じ経路**を通るので、
+        // 切替演出も BGM の位相保存も追加のコストが無い。操作があれば即座に抜ける
+        if (
+          stepAttract(attract, {
+            screen: flow.screen,
+            anyInput: anyInputIn(context.input.snapshot),
+          })
+        ) {
+          context.generation.cycle(1);
+        }
         const requested = requestedGeneration(input);
         // 表示中の世代を要求しても `request()` が偽を返すだけで演出は起きない
         if (requested) context.generation.request(requested);
