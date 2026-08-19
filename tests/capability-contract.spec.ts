@@ -176,16 +176,33 @@ describe('能力契約', () => {
   });
 
   describe('スプライトの重ね順', () => {
-    it('FC はミニマップの枠が最背面・HUD が最前面・その間で自機が最も手前に来る', () => {
-      const frame = buildFrame('FC', raceAfter(1500));
+    it('FC はミニマップの枠が最背面・HUD が最前面・車は接地線 Y の順に積まれる', () => {
+      // 400 tick は GO の表示が消えた直後で、自機とライバルが同じ画面に映る
+      const frame = buildFrame('FC', raceAfter(400));
       const ids = frame.sprites.map((sprite) => sprite.id);
       expect(ids[0]).toMatch(/^minimap-panel/);
       // HUD は BG 相当（優先度つき）なので、走査線制限の外で最前面に積まれる
       expect(ids[ids.length - 1]).toMatch(/^hud-/);
-      // 実機の OAM は番号が若いほど優先度が高く、かつ手前に出る。
-      // 登録順は 自機 → マーカー → ライバル なので、積む順はその逆になる
+
+      // 重なりを決めるのは登録順ではなく**接地線 Y**（11-2・R-2）。
+      // 実機の OAM 番号は優先度と重なりの両方を決めたが、優先度のほうは
+      // 「自機を消さない」ために登録順のまま残してある（`sprite-plane.ts`）
+      const grounds = frame.sprites
+        .filter((sprite) => sprite.id.startsWith('car-sprite-FC-'))
+        .map((sprite) => sprite.position[1] + 0.36 * sprite.size[1]);
+      expect(grounds.length).toBeGreaterThan(1);
+      for (let index = 1; index < grounds.length; index++) {
+        expect(grounds[index]!).toBeGreaterThanOrEqual(grounds[index - 1]!);
+      }
+
+      // マーカーは奥行きを持たない記号なので、車と重ね順を競わせず前に置く
       const limited = ids.filter((id) => !isBackgroundPlane(id));
-      expect(limited[limited.length - 1]).toBe('car-sprite-FC-0');
+      let lastCar = -1;
+      for (const [index, id] of limited.entries()) {
+        if (id.startsWith('car-sprite-')) lastCar = index;
+      }
+      const firstMarker = limited.findIndex((id) => id.startsWith('minimap-marker-'));
+      expect(firstMarker).toBeGreaterThan(lastCar);
     });
   });
 });

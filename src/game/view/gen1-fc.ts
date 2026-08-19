@@ -100,7 +100,8 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   const tunnel = tunnelScreen({ generation, profile, track, view });
   frame.rasterSurfaces.push(buildRoadSurface(view, generation, tunnel));
 
-  // ── スプライト。登録順（＝優先度）は 自機 → ミニマップのマーカー → ライバル車
+  // ── スプライト。登録順（＝走査線制限の優先度）は 自機 → マーカー → ライバル車。
+  // **手前／奥は登録順ではなく接地線 Y で決まる**（11-2・`sprite-plane.ts`）
   const placement: CarPlacementOptions = { view, track, profile, generation, atlas };
   const minimap = buildMinimap({
     generation,
@@ -112,6 +113,7 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
   });
 
   // 登録順が優先度。自機を先頭に置くので、自機だけは決して消えない
+  // （手前に描かれるかどうかは接地線 Y のほうが決める）
   const entries: SpriteEntry[] = [];
 
   const playerSprite = carSpriteCommand(
@@ -134,6 +136,8 @@ export function buildGen1View(frame: RenderFrame, context: ViewContext): void {
       y: marker.position[1] - marker.size / 2,
       height: marker.size,
       sprites,
+      // 画面に貼られた図で、世界に居る物ではない。車と重ね順を競わせない（11-2）
+      depthSorted: false,
     });
   });
 

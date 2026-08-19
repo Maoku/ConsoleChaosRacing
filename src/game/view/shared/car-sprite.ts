@@ -274,8 +274,11 @@ export function playerPlacement(options: CarPlacementOptions, car: DisplayCar): 
 }
 
 /**
- * ライバルの位置。カメラより前にいる車だけを、距離順（遠い順）に返す。
- * 返す順がそのまま登録順になり、近い車が後（＝手前）に描かれる。
+ * ライバルの位置。カメラより前にいる車だけを、**近い順**に返す。
+ *
+ * 返す順がそのまま登録順 ＝ 走査線制限の優先度になるので、混雑したときに
+ * 消えるのは遠い車のほうになる。**手前／奥の重なりはこの順では決まらない** —
+ * 接地線 Y で決めるのは `sprite-plane.ts` の役目である（11-2・R-2）。
  */
 export function rivalPlacements(
   options: CarPlacementOptions,
@@ -294,7 +297,7 @@ export function rivalPlacements(
     placements.push(place(options, car, distance, false));
   }
 
-  placements.sort((left, right) => right.distance - left.distance);
+  placements.sort((left, right) => left.distance - right.distance);
   return placements;
 }
 

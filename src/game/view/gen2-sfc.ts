@@ -130,7 +130,8 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
   const tunnel = tunnelScreen({ generation, profile, track, view });
   for (const band of tunnelRoadBands(view, tunnel, generation)) frame.sprites.push(band);
 
-  // ── スプライト。登録順（＝優先度）は 自機 → ミニマップのマーカー → ライバル車
+  // ── スプライト。登録順（＝走査線制限の優先度）は 自機 → マーカー → ライバル車。
+  // **手前／奥は登録順ではなく接地線 Y で決まる**（11-2・`sprite-plane.ts`）
   const placement: CarPlacementOptions = {
     view,
     track,
@@ -158,6 +159,8 @@ export function buildGen2View(frame: RenderFrame, context: ViewContext): void {
       y: marker.position[1] - marker.size / 2,
       height: marker.size,
       sprites,
+      // 画面に貼られた図で、世界に居る物ではない。車と重ね順を競わせない（11-2）
+      depthSorted: false,
     });
   });
 
