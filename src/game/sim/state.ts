@@ -172,11 +172,22 @@ export interface RaceState {
   readonly standingOrder: number[];
 }
 
+/**
+ * アトラクトデモで自機に与える目標の相当エントラント。
+ *
+ * デモで自機だけ目標無し（＝常に全力）にすると、ポールスタートと相まって
+ * **毎回同じ独走**になる。中位の目標を与えると、ポールから順位を下げてから
+ * 中盤で競る画になる。自機のスペック（速度スケール 1）は変えない —
+ * デモは「自機の車」を見せる場なので（バランス改修計画 §4.5）
+ */
+const DEMO_TARGET_ENTRANT = 4;
+
 function createCar(
   entrant: number,
   track: Track,
   seed: number,
   difficulty: Difficulty,
+  autoPilot: boolean,
 ): CarState {
   const rng = createRng(mix32(seed ^ (entrant * 0x9e3779b1)));
   // グリッドは 2 列。ポールが最も前（s が大きい ＝ スタートラインに近い）
@@ -188,6 +199,8 @@ function createCar(
   // こうすると `lineBias` / `reactionTicks` が 1 ビットも変わらず、走りの差分の原因を
   // 速度スケールと目標タイムだけに絞れる（バランス改修計画 リスク 6）
   const jitterSeconds = entrant === 0 ? 0 : rng.next() * BALANCE.START_JITTER_SECONDS;
+  // 自機は実操作なら目標を持たない。アトラクトデモのときだけ中位の目標で走る
+  const targetEntrant = entrant === 0 ? (autoPilot ? DEMO_TARGET_ENTRANT : 0) : entrant;
 
   return {
     entrant,
@@ -213,7 +226,9 @@ function createCar(
     // 自機（0）は自機のスペックのまま。敵車だけが 0.95 の実測比まで落ちる
     speedScale: entrant === 0 ? 1 : BALANCE.SPEED_SCALE,
     targetRaceTicks:
-      entrant === 0 ? NO_TARGET : targetRaceTicksFor(entrant, difficulty, jitterSeconds),
+      targetEntrant === 0
+        ? NO_TARGET
+        : targetRaceTicksFor(targetEntrant, difficulty, jitterSeconds),
     // 自機（0）は個体差を持たない。AI だけがばらつく
     lineBias: entrant === 0 ? 0 : (rng.next() - 0.5) * 1.6,
     reactionTicks: entrant === 0 ? 0 : Math.floor(rng.next() * 6),
@@ -233,9 +248,10 @@ export function createRaceState(options: CreateRaceOptions = {}): RaceState {
   const track = options.track ?? TRACK;
   const seed = options.seed ?? 20260812;
   const difficulty = options.difficulty ?? 'normal';
+  const autoPilot = options.autoPilot ?? false;
   const cars: CarState[] = [];
   for (let entrant = 0; entrant < ENTRANT_COUNT; entrant++) {
-    cars.push(createCar(entrant, track, seed, difficulty));
+    cars.push(createCar(entrant, track, seed, difficulty, autoPilot));
   }
   for (const car of cars) {
     car.progress = car.lap * track.length + car.s - track.length;
@@ -246,7 +262,7 @@ export function createRaceState(options: CreateRaceOptions = {}): RaceState {
     tick: 0,
     phase: 'countdown',
     countdown: COUNTDOWN_TICKS,
-    autoPilot: options.autoPilot ?? false,
+    autoPilot,
     cars,
     standingOrder: cars.map((car) => car.entrant),
   };

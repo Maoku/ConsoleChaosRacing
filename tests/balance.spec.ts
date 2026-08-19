@@ -290,3 +290,26 @@ describe('バランス: 目標タイムの達成（R-2 d）', () => {
     expect(second.finishTicks).toEqual(first.finishTicks);
   }, RACE_TIMEOUT_MS);
 });
+
+describe('バランス: アトラクトデモの自機（§4.5）', () => {
+  it('デモの自機は中位の目標を持ち、ポールから順位を下げて中盤で競る', () => {
+    const state = createRaceState({ seed: 20260812, autoPilot: true });
+    const player = state.cars[0]!;
+    // 目標は entrant 4 相当（ばらつきは無し）。自機のスペック（速度スケール 1）は変えない
+    expect(player.speedScale).toBe(1);
+    expect(player.targetRaceTicks).toBe(targetRaceTicksFor(4, 'normal', 0));
+
+    const standings: number[] = [];
+    while (state.phase !== 'finished' && state.tick < 60 * 60 * 20) {
+      stepRace(state);
+      if (!player.finished) standings.push(player.standing);
+    }
+    // ポール（1 位）から始まり、最後は中位へ落ちている ＝ 独走にならない
+    expect(standings[0]).toBe(1);
+    expect(player.standing).toBeGreaterThan(2);
+    expect(player.standing).toBeLessThan(7);
+    const error =
+      tickToSeconds(player.finishTick - COUNTDOWN_TICKS) - tickToSeconds(player.targetRaceTicks);
+    expect(Math.abs(error)).toBeLessThan(1);
+  }, RACE_TIMEOUT_MS);
+});
