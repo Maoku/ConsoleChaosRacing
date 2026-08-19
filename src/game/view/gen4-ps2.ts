@@ -16,7 +16,7 @@ import { cockpitSprites } from './shared/cockpit.js';
 import { ENVIRONMENT_MAP, SKYLINE, SUN_DIRECTION, equirectU } from './shared/environment.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
-import { sceneryFor } from './shared/scenery.js';
+import { sceneryFor } from '../sim/scenery.js';
 import { tyreWallDrawDistance, tyreWallMeshes } from './shared/scenery-mesh.js';
 import { sceneryBillboardAtlasFor, sceneryBillboards } from './shared/scenery-sprite.js';
 import {

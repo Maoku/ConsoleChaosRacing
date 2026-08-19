@@ -9,7 +9,7 @@ import {
 
 import type { Track } from '../../sim/track.js';
 import type { RoadView } from './projection.js';
-import type { SceneryKind, SceneryObject } from './scenery.js';
+import type { SceneryKind, SceneryObject } from '../../sim/scenery.js';
 
 /**
  * 擬似3D世代の背景オブジェクト（実装計画 8-6）。

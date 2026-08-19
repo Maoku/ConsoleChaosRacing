@@ -21,7 +21,7 @@ import { buildHud } from './shared/hud.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { FC_CAMERA, createRoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
-import { sceneryFor } from './shared/scenery.js';
+import { sceneryFor } from '../sim/scenery.js';
 import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
 import {

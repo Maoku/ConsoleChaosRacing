@@ -1,15 +1,12 @@
 import type { Track } from '../../sim/track.js';
+import { TUNNEL, tunnelDepthAt } from '../../sim/tunnel.js';
 import type { TrackMeshLod } from './track-mesh.js';
 
 /**
- * トンネル区間（実装計画 8-9）。
+ * トンネルの見せ方（実装計画 8-9）。
  *
- * **背景オブジェクトと同じ方針で、1 つの表から 4 世代ぶんを出す。**
- * 位置も寸法もここにしか書かれておらず、生成ツール（`tools/build-tunnel-mesh.mjs`）と
- * 実行時の 4 つのビューが同じ定数を読む。`scenery.ts` の配置表と同じ性質で、
- * 乱数も状態も持たないので生成側と描画側が必ず一致する。
- *
- * 世代ごとの出し方は違う。
+ * **区間そのものの定義は `sim/tunnel.ts` にある。** ここにあるのは
+ * 「その世界をどう描くか」だけで、世代ごとの出し方は違う。
  *
  * | 世代 | 出し方 |
  * | --- | --- |
@@ -23,93 +20,16 @@ import type { TrackMeshLod } from './track-mesh.js';
  * そのままであり、同じ世界を 4 通りに描くというこの作品の主張の一部になる。
  */
 
-/**
- * 区間 [from, to)（弧長 [m]）。
- *
- * 戻りのストレート（s ≒ 2384–2795）の中に採る。**この 220 m はコース中で最も
- * 直線に近く（半径 548 m）・バンクが 0°・標高差 0.4 m** なので、
- * 焼いたトンネルの断面が路面に沿う。コーナーやバンク区間に置くと、
- * 内壁が路面から離れたり食い込んだりするのが目に見えて分かる。
- */
-export const TUNNEL = {
-  from: 2440,
-  to: 2660,
-
-  /** 内壁を路面の縁からどれだけ外へ立てるか [m]。縁石 1.2 m ＋ 退避 2 m */
-  wallMargin: 3.2,
-  /** 側壁が立ち上がっている高さ（アーチの起拱点）[m] */
-  springHeight: 4,
-  /** 天井の頂点の高さ [m] */
-  crownHeight: 6.4,
-  /** アーチの分割数。半楕円を折れ線で近似する */
-  archFacets: 8,
-
-  /** 側壁の足元の歩廊。幅 [m] と高さ [m] */
-  ledgeWidth: 0.8,
-  ledgeHeight: 0.3,
-  /**
-   * 壁の下端を路面からどれだけ下げるか [m]。
-   *
-   * 草地は路面から最大 0.45 m 下がる（`build-track-mesh.mjs` の `GRASS_DROP`）。
-   * それより深くまで壁を伸ばして地面へ埋め、隙間から外が見えないようにする。
-   */
-  buried: 0.8,
-
-  /** 坑口のリムの拡大率と、拡大の中心高さ [m] */
-  portalScale: 1.42,
-  portalCenter: 1.6,
-  /** 坑口のリムの厚み [m]（進行方向）。真横から見たときに面積を持つ */
-  portalDepth: 1.4,
-
-  /** 天井の照明。中心に沿った帯 */
-  lamp: {
-    /** 帯の幅 [m] */
-    width: 0.7,
-    /** 天井からどれだけ下げるか [m]。0 だと z-fighting になる */
-    drop: 0.1,
-    /** 灯具の間隔 [m] と 1 つの長さ [m] */
-    spacing: 9,
-    length: 3,
-  },
-} as const;
-
-/**
- * 坑口の前後で照明を混ぜる距離 [m]。
- *
- * 天井が太陽を遮る計算はしていない（レンダラーに影のボリュームは無い）ので、
- * 坑口を跨いだ瞬間に画面全体の明るさが切り替わることになる。それを
- * この距離で線形に混ぜて「目が慣れる」ように見せる。60 m/s で 0.4 秒ぶん。
- */
-export const TUNNEL_BLEND = 24;
-
-/** 区間の長さ [m] */
-export function tunnelLength(): number {
-  return TUNNEL.to - TUNNEL.from;
-}
-
-/**
- * その弧長がトンネルの中へどれだけ入っているか [m]。外なら負（＝最寄りの坑口までの距離）。
- *
- * 入口からの距離と出口までの距離の小さいほうを返すので、
- * 入口手前でも出口の先でも「坑口までどれだけか」がそのまま符号付きで出る。
- */
-export function tunnelDepthAt(track: Track, s: number): number {
-  return Math.min(track.deltaS(s, TUNNEL.from), track.deltaS(TUNNEL.to, s));
-}
-
-/** その弧長がトンネルの中か */
-export function insideTunnel(track: Track, s: number): boolean {
-  return tunnelDepthAt(track, s) > 0;
-}
-
-/**
- * トンネルらしさ 0..1。坑口の ±`TUNNEL_BLEND` m で線形に切り替わる。
- * 照明・フォグ・映り込みの強さは、すべてこの 1 つの値から混ぜる。
- */
-export function tunnelBlendAt(track: Track, s: number): number {
-  const depth = tunnelDepthAt(track, s);
-  return Math.min(1, Math.max(0, (depth + TUNNEL_BLEND) / (2 * TUNNEL_BLEND)));
-}
+// 区間の定義と弧長の判定は再輸出する。読み手（ビューと生成ツール）は
+// トンネルの話を 1 つの import で済ませられる
+export {
+  TUNNEL,
+  TUNNEL_BLEND,
+  insideTunnel,
+  tunnelBlendAt,
+  tunnelDepthAt,
+  tunnelLength,
+} from '../../sim/tunnel.js';
 
 /**
  * 視点から前方に見えるトンネル区間の距離 [m]。

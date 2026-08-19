@@ -10,7 +10,7 @@ import {
   sceneryObjects,
   sceneryOfKinds,
   type SceneryKind,
-} from '../src/game/view/shared/scenery.js';
+} from '../src/game/sim/scenery.js';
 import { tyreWallDrawDistance } from '../src/game/view/shared/scenery-mesh.js';
 import {
   sceneryBillboardAtlasFor,

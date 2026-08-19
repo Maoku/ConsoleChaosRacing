@@ -7,7 +7,7 @@ import {
 } from '@console-chaos/engine';
 
 import type { Track } from '../../sim/track.js';
-import type { SceneryObject } from './scenery.js';
+import type { SceneryObject } from '../../sim/scenery.js';
 
 /**
  * 第4世代のタイヤフェンス（実装計画 8-6 / 8-10）。

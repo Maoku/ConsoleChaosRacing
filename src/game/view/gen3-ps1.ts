@@ -10,7 +10,7 @@ import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js'
 import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
-import { sceneryFor } from './shared/scenery.js';
+import { sceneryFor } from '../sim/scenery.js';
 import { sceneryBillboardAtlasFor, sceneryBillboards } from './shared/scenery-sprite.js';
 import {
   trackMeshLodFor,

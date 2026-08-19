@@ -11,7 +11,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { TRACK } from '../src/game/sim/track.js';
-import { sceneryFor } from '../src/game/view/shared/scenery.js';
+import { sceneryFor } from '../src/game/sim/scenery.js';
 import { TRACK_MESH_LODS } from '../src/game/view/shared/track-mesh.js';
 import {
   TUNNEL,

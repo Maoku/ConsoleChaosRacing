@@ -18,7 +18,7 @@ import { MARKER_ATLAS } from './shared/minimap-layout.js';
 import { buildMinimap, defaultMinimapRect } from './shared/minimap.js';
 import { SFC_CAMERA, SFC_DRAW_DISTANCE, createRoadView, type RoadView } from './shared/projection.js';
 import { roadSurfaceFor } from './shared/road-surface.js';
-import { sceneryFor } from './shared/scenery.js';
+import { sceneryFor } from '../sim/scenery.js';
 import { scenerySpriteAtlasFor, sceneryPlacements } from './shared/scenery-sprite.js';
 import { pushSpritePlane, type SpriteEntry } from './shared/sprite-plane.js';
 import { tunnelScreen, type TunnelScreen } from './shared/tunnel-sprite.js';

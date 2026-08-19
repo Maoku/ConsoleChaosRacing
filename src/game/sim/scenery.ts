@@ -1,4 +1,4 @@
-import type { Track } from '../../sim/track.js';
+import type { Track } from './track.js';
 import { insideTunnel } from './tunnel.js';
 
 /**
@@ -13,6 +13,11 @@ import { insideTunnel } from './tunnel.js';
  *
  * 世代ごとに出す物は違う（FC は看板だけ、PS2 は木もフェンスも）が、
  * **出す物の場所は 4 世代で完全に同じ**であり、`scenery.spec.ts` がそれを固定する。
+ *
+ * **置き場所が `sim/` なのは、シムが view を import しないため**である（不変条件）。
+ * 壁の材質はここに立っている物から決まる（11-4）ので、配置表はシム側の真実になる。
+ * 配置は `s` と `curvature` だけから決まる決定論的な表で、もともと
+ * 「4 世代 ＋ 生成ツールが読む 1 つの真実」だった。
  */
 
 export type SceneryKind = 'sign' | 'tree' | 'tyres';
