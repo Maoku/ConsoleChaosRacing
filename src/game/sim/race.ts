@@ -1,6 +1,7 @@
 import { FIXED_DT_SECONDS } from '@console-chaos/engine';
 
 import { driveAi } from './ai.js';
+import { resolveCarContacts } from './collision.js';
 import { LAP_COUNT, type CarState, type RaceState } from './state.js';
 import { stepVehicle, type VehicleControl } from './vehicle.js';
 
@@ -42,6 +43,8 @@ export function stepRace(state: RaceState, playerControl: VehicleControl = NEUTR
   const track = state.track;
   const dt = FIXED_DT_SECONDS;
 
+  const previousS: number[] = [];
+
   if (state.phase === 'countdown') {
     state.countdown -= 1;
     if (state.countdown <= 0) {
@@ -50,6 +53,9 @@ export function stepRace(state: RaceState, playerControl: VehicleControl = NEUTR
     }
   }
 
+  // 車どうしの接触は**全車を進めたあと**に 1 回だけ解く。1 台ずつの中で解くと
+  // 更新順が結果を変えてしまう（`collision.ts`）。ここでは位置と速度しか動かないので、
+  // 周回判定と順位はそのあとで採り直す
   for (const car of state.cars) {
     const control =
       car.entrant === 0 && !state.autoPilot
@@ -58,9 +64,14 @@ export function stepRace(state: RaceState, playerControl: VehicleControl = NEUTR
           : playerControl
         : driveAi(state, car);
 
-    const previousS = car.s;
+    previousS[car.entrant] = car.s;
     stepVehicle(car, control, track, dt);
-    updateLap(state, car, previousS);
+  }
+
+  resolveCarContacts(state);
+
+  for (const car of state.cars) {
+    updateLap(state, car, previousS[car.entrant]!);
     car.progress = (car.lap - 1) * track.length + car.s;
   }
 

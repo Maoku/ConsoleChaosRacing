@@ -105,7 +105,7 @@ describe('コースアウトからの復帰', () => {
     let hits = 0;
     for (let tick = 0; tick < 60 * 3; tick++) {
       stepVehicle(car, { steer: 0.4, throttle: 1, brake: 0 }, TRACK, dt);
-      if (!car.hitWall) continue;
+      if (car.hitKind !== 'wall') continue;
       hits += 1;
       const limit = TRACK.sampleAt(car.s).halfWidth + VEHICLE.RUNOFF;
       expect(Math.abs(car.lateral)).toBeLessThan(limit);
@@ -123,7 +123,7 @@ describe('コースアウトからの復帰', () => {
     const ticks = 60 * 5;
     for (let tick = 0; tick < ticks; tick++) {
       stepVehicle(car, { steer: 1, throttle: 1, brake: 0 }, TRACK, dt);
-      if (car.hitWall) contactTicks += 1;
+      if (car.hitKind === 'wall') contactTicks += 1;
     }
     expect(contactTicks).toBeGreaterThan(0);
     expect(contactTicks / ticks).toBeLessThan(0.1);
@@ -137,7 +137,7 @@ describe('コースアウトからの復帰', () => {
       for (let tick = 0; tick < 60 * 2; tick++) {
         const before = car.speed;
         stepVehicle(car, { steer: 0, throttle: 1, brake: 0 }, TRACK, dt);
-        if (car.hitWall) return before - car.speed;
+        if (car.hitKind === 'wall') return before - car.speed;
       }
       throw new Error(`yaw ${yaw} で壁へ届かなかった`);
     };

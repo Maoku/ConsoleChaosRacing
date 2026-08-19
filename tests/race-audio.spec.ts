@@ -252,12 +252,14 @@ describe('効果音', () => {
     audio.clear();
     const player = race.cars[0]!;
     player.speed = 50;
-    player.hitWall = true;
+    player.hitKind = 'wall';
+    player.hitStrength = 6;
     sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
     expect(audio.oneShots).toHaveLength(1);
 
     audio.clear();
-    player.hitWall = false;
+    player.hitKind = 'none';
+    player.hitStrength = 0;
     audio.advance(FIXED_DT);
     sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
     expect(audio.oneShots).toHaveLength(0);
@@ -287,7 +289,8 @@ describe('効果音', () => {
       audio.clear();
       const player = race.cars[0]!;
       player.speed = 50;
-      player.hitWall = true;
+      player.hitKind = 'wall';
+      player.hitStrength = 6;
       sfx.update(audio, profile, race);
       const request = audio.oneShots[0]!;
       if (profile.audio.positional) {

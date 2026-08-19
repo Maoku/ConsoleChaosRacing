@@ -149,7 +149,7 @@ export function createRaceSfx(): RaceSfx {
       }
 
       // ── 接触。シムが 1 ティックだけ立てるフラグで鳴らす
-      if (player.hitWall) {
+      if (player.hitKind !== 'none') {
         audio.playOneShot({
           role: 'perc',
           frequency: IMPACT.frequency,

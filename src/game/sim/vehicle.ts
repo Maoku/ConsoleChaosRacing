@@ -56,6 +56,16 @@ export const VEHICLE = {
   SLIDE_TIME: 0.28,
   /** 横滑り中のタイヤ抵抗 [1/s] */
   SCRUB: 0.55,
+  /**
+   * 車体の全長 [m]。衝突判定（`collision.ts`）・3D モデルの倍率・
+   * 2D スプライトの世界寸法が共有する**唯一の値**（実装計画 D-7）。
+   */
+  CAR_LENGTH: 4.2,
+  /**
+   * 車体の全幅 [m]。第1・第2世代のスプライトを実測した値（`cellMeters` は
+   * 正面のセルの車幅がこれになるように決めてある）。
+   */
+  CAR_WIDTH: 1.95,
   /** 路面外側の走行可能域（草地）[m] */
   RUNOFF: 9,
   /** 壁から内側へ戻す量 [m]。壁に貼り付いたままにしない */
@@ -240,7 +250,8 @@ export function stepVehicle(
   const currentSample = track.sampleAt(car.s);
   car.offTrack = Math.abs(car.lateral) > currentSample.halfWidth;
   const limit = currentSample.halfWidth + VEHICLE.RUNOFF;
-  car.hitWall = false;
+  car.hitKind = 'none';
+  car.hitStrength = 0;
   if (Math.abs(car.lateral) > limit) {
     // 壁は**外向きの運動だけ**を吸う。以前は当たるたびに位置を壁ちょうどへ留め、
     // ヨーを向きに関わらず 0.3 倍にし、速度を 14 m/s で頭打ちにしていた。
@@ -252,8 +263,10 @@ export function stepVehicle(
     if (car.yaw * side > 0) car.yaw *= VEHICLE.WALL_YAW_KILL;
     // 速度の罰は当たりの強さに比例させる。掠っただけならほとんど削らない
     const outward = Math.max(0, lateralVelocity * side);
-    car.speed = Math.max(0, car.speed - outward * VEHICLE.WALL_BITE);
-    car.hitWall = true;
+    const loss = Math.min(car.speed, outward * VEHICLE.WALL_BITE);
+    car.speed -= loss;
+    car.hitKind = 'wall';
+    car.hitStrength = loss;
   }
 
   car.lateralAccel = car.speed * yawRate;

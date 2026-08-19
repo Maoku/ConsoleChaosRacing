@@ -91,6 +91,14 @@ export function targetRaceTicksFor(
 
 export type RacePhase = 'countdown' | 'racing' | 'finished';
 
+/**
+ * 何に当たったか。`'none'` は当たっていない。
+ *
+ * 壁の材質を分けるのは 11-4。**接触した 1 ティックだけ立ち、次のティックで
+ * `stepVehicle` が畳む**ので、読む側は立ち上がりを数えなくてよい。
+ */
+export type HitKind = 'none' | 'wall' | 'car';
+
 export interface CarState {
   /** エントラント番号 0..7。0 が自機 */
   readonly entrant: number;
@@ -110,8 +118,13 @@ export interface CarState {
   standing: number;
   /** 路面外に出ているか */
   offTrack: boolean;
-  /** この tick で壁に当たったか */
-  hitWall: boolean;
+  /**
+   * この tick で何に当たったか（実装計画 11-3 / R-3・R-4）。
+   * 真偽値ではなく種類を持つので、音は当たった相手ごとに変えられる。
+   */
+  hitKind: HitKind;
+  /** その接触で失った速度 [m/s]。掠りは小さく、激突は大きい */
+  hitStrength: number;
   /** 完走したか */
   finished: boolean;
   /** 完走した tick。未完走は -1 */
@@ -212,7 +225,8 @@ function createCar(
     progress: 0,
     standing: entrant + 1,
     offTrack: false,
-    hitWall: false,
+    hitKind: 'none',
+    hitStrength: 0,
     finished: false,
     finishTick: -1,
     lapStartTick: -1,
