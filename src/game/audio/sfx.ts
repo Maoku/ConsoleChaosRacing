@@ -20,8 +20,24 @@ const BRAKE_HIT = { frequency: 1180, duration: 0.16, velocity: 0.5 } as const;
 const BRAKE_HOLD = { frequency: 2100, duration: 0.07, velocity: 0.22, intervalMs: 120 } as const;
 /** 路面外を走っている間の低いノイズ。速度に連れて強くなる */
 const OFF_TRACK = { frequency: 120, duration: 0.1, intervalMs: 90 } as const;
-/** 壁との接触。相対速度ではなく自車速度で強さを決める（壁は動かない） */
-const IMPACT = { frequency: 78, duration: 0.3 } as const;
+/**
+ * 接触音（実装計画 11-4 / R-4）。**当たった相手ごとに音を変える。**
+ *
+ * コンクリートは硬く高く、タイヤは低く短く（沈んで止まる）、車は金属質の軽い当たり。
+ * どれも `playOneShot` を通るので、**世代が変われば音色も変わる**。
+ *
+ * 強さは自車速度ではなく**実際に失った速度**（`hitStrength`）から決める。
+ * 掠りは小さく、激突は大きく鳴る — 速度で決めると、高速で壁を舐めただけでも
+ * 激突と同じ音になってしまう。
+ */
+const IMPACT = {
+  concrete: { role: 'perc', frequency: 78, duration: 0.3 },
+  tyre: { role: 'perc', frequency: 55, duration: 0.22 },
+  car: { role: 'fx', frequency: 220, duration: 0.12 },
+} as const;
+
+/** この速度 [m/s] を失う当たりで音量が最大になる */
+const IMPACT_FULL_LOSS = 20;
 /** 周回通過。`lead` の単音なので BGM と同じ音色で鳴る */
 const LAP = { frequency: 880, duration: 0.22, velocity: 0.6 } as const;
 /** スタートシグナル。3・2・1 と GO で高さを変える */
@@ -148,14 +164,15 @@ export function createRaceSfx(): RaceSfx {
         });
       }
 
-      // ── 接触。シムが 1 ティックだけ立てるフラグで鳴らす
+      // ── 接触。シムが 1 ティックだけ立てる種類で鳴らす
       if (player.hitKind !== 'none') {
+        const impact = IMPACT[player.hitKind];
         audio.playOneShot({
-          role: 'perc',
-          frequency: IMPACT.frequency,
+          role: impact.role,
+          frequency: impact.frequency,
           when: now,
-          durationSeconds: IMPACT.duration,
-          velocity: Math.min(1, 0.3 + player.speed / VEHICLE.MAX_SPEED),
+          durationSeconds: impact.duration,
+          velocity: Math.min(1, 0.25 + player.hitStrength / IMPACT_FULL_LOSS),
           ...withPan({}),
         });
       }

@@ -1,5 +1,7 @@
 import type { Track } from './track.js';
 import { insideTunnel } from './tunnel.js';
+import { wallLateral } from './vehicle.js';
+import { TIGHT_CURVATURE, outsideSign } from './wall.js';
 
 /**
  * 背景オブジェクトの配置（実装計画 8-6）。
@@ -36,8 +38,6 @@ export interface SceneryObject {
 
 /** ここを超える曲率を「コーナー」とみなす [1/m]（8-1 のステアフレームと同じ基準） */
 const CORNER_CURVATURE = 1 / 240;
-/** ここを超えると「高曲率区間」＝ タイヤフェンスを置く [1/m] */
-const TIGHT_CURVATURE = 1 / 90;
 
 /** 看板をコーナー入口の何 m 手前に立てるか */
 const SIGN_LEAD = 30;
@@ -51,11 +51,15 @@ const TYRE_SPACING = 12;
  * 路面の縁からどれだけ外へ置くか [m]。
  *
  * 木だけは**壁の外**に立てる（実画面で確認）。3D 世代のコースメッシュは
- * 路面の外へ縁石 1.2 m ＋ 草地 9 m を張り、その外縁に高さ 1 m の壁が立つので、
+ * 路面の外へ縁石 1.2 m ＋ 草地 7.8 m を張り、その外縁に高さ 1 m の壁が立つので、
  * 木を 13 m に置くと壁の内側 ＝ コースの敷地の中に生えてしまう。
- * 看板とタイヤフェンスは壁の内側でよい（実際のサーキットでもそこにある）。
+ * 看板は壁の内側でよい（実際のサーキットでもそこにある）。
+ *
+ * **タイヤフェンスはここに無い。** 壁の内貼りなので位置は `wallLateral()` から
+ * 引く（実装計画 D-8）。縁から 3 m のまま当たり判定を足すと、その外側（3〜15 m）へ
+ * 出た車が戻れなくなり、9-1 の「戻れない地点は 1 つも無い」を壊す。
  */
-const OFFSET = { sign: 5, tree: 20, tyres: 3 } as const;
+const OFFSET = { sign: 5, tree: 20 } as const;
 
 /** 高さ [m]。スプライトもビルボードもこの値を世界での寸法として使う */
 const HEIGHT = { sign: 3.2, tree: 7, tyres: 1.1 } as const;
@@ -69,16 +73,11 @@ const HEIGHT = { sign: 3.2, tree: 7, tyres: 1.1 } as const;
  */
 const TREE_HEIGHTS = [7.6, 6.4, 8.2, 6.9] as const;
 
-/** コーナーの外側はどちら向きか。曲率は左が正なので、左コーナーの外側は右 */
-function outsideSign(curvature: number): number {
-  return curvature > 0 ? 1 : -1;
-}
-
 /**
  * コース全周の背景オブジェクト。`s` の昇順で返す。
  *
  * - コーナー入口の 30 m 手前 … 看板（外側）
- * - 高曲率区間 … タイヤフェンス（外側・12 m 間隔）
+ * - 高曲率区間 … タイヤフェンス（外側・12 m 間隔・**壁の内貼り**）
  * - それ以外 … 木（左右・25 m 間隔）
  */
 export function sceneryObjects(track: Track): readonly SceneryObject[] {
@@ -109,14 +108,15 @@ export function sceneryObjects(track: Track): readonly SceneryObject[] {
     });
   }
 
-  // ── タイヤフェンス。高曲率区間の外側だけに、等間隔で
+  // ── タイヤフェンス。高曲率区間の外側だけに、等間隔で。
+  // **壁の位置に貼る**（D-8）ので、区間と側の決め方は `wallMaterialAt()` と同じ 1 つの規則
   for (let s = 0; s < track.length; s += TYRE_SPACING) {
     const sample = track.sampleAt(s);
     if (Math.abs(sample.curvature) < TIGHT_CURVATURE) continue;
     objects.push({
       kind: 'tyres',
       s,
-      lateral: outsideSign(sample.curvature) * (sample.halfWidth + OFFSET.tyres),
+      lateral: outsideSign(sample.curvature) * wallLateral(sample.halfWidth),
       height: HEIGHT.tyres,
     });
   }

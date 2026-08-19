@@ -1,5 +1,6 @@
 import type { CarState } from './state.js';
 import type { Track } from './track.js';
+import { WALL, wallMaterialAt } from './wall.js';
 
 /**
  * 車両モデル（実装計画 §5.3）。アーケード寄り。
@@ -68,13 +69,19 @@ export const VEHICLE = {
   CAR_WIDTH: 1.95,
   /** 路面外側の走行可能域（草地）[m] */
   RUNOFF: 9,
-  /** 壁から内側へ戻す量 [m]。壁に貼り付いたままにしない */
-  WALL_BOUNCE: 0.4,
-  /** 壁に当たったとき、外向きの横速度 1 m/s あたり削る速度 [m/s] */
-  WALL_BITE: 1.8,
   /** 壁が殺す外向きヨーの残り */
   WALL_YAW_KILL: 0.25,
 } as const;
+
+/**
+ * 壁の位置（中心線からの右向き距離）[m]。
+ *
+ * **シムと生成ツールがこの 1 つの式を読む**（実装計画 D-9）。以前はコースメッシュが
+ * 縁石 1.2 m を足し忘れており、**描かれている壁がシムの壁より 1.2 m 外**にあった。
+ */
+export function wallLateral(halfWidth: number): number {
+  return halfWidth + VEHICLE.RUNOFF;
+}
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return value < minimum ? minimum : value > maximum ? maximum : value;
@@ -249,7 +256,7 @@ export function stepVehicle(
   // ── 路面外の判定と壁
   const currentSample = track.sampleAt(car.s);
   car.offTrack = Math.abs(car.lateral) > currentSample.halfWidth;
-  const limit = currentSample.halfWidth + VEHICLE.RUNOFF;
+  const limit = wallLateral(currentSample.halfWidth);
   car.hitKind = 'none';
   car.hitStrength = 0;
   if (Math.abs(car.lateral) > limit) {
@@ -258,14 +265,19 @@ export function stepVehicle(
     // これだと内向きの舵でヨーが育たず、上の `slide` が外向きに勝って
     // **壁から永久に離れられない**（全開＋フル戻り舵で 30 秒たっても復帰しない）。
     const side = car.lateral > 0 ? 1 : -1;
-    car.lateral = side * (limit - VEHICLE.WALL_BOUNCE);
+    // 材質は「そこに何が立っているか」から決まる（`wall.ts`）。見えているタイヤ壁と
+    // 当たり判定が構造的にずれない
+    const material = wallMaterialAt(track, car.s, side);
+    const wall = WALL[material];
+    car.lateral = side * (limit - wall.bounce);
     // 外を向いたヨーは殺すが、内を向いたヨー ＝ 復帰の意思はそのまま残す
     if (car.yaw * side > 0) car.yaw *= VEHICLE.WALL_YAW_KILL;
-    // 速度の罰は当たりの強さに比例させる。掠っただけならほとんど削らない
+    // 速度の罰は当たりの強さに比例させる。**掠りにも下限を置く**（D-10）—
+    // 下限が無いと「壁を舐めながら走る」のがいちばん速いラインになってしまう
     const outward = Math.max(0, lateralVelocity * side);
-    const loss = Math.min(car.speed, outward * VEHICLE.WALL_BITE);
+    const loss = Math.min(car.speed, Math.max(outward * wall.bite, car.speed * wall.minimumLoss));
     car.speed -= loss;
-    car.hitKind = 'wall';
+    car.hitKind = material;
     car.hitStrength = loss;
   }
 

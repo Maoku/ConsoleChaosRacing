@@ -1,6 +1,7 @@
 import { FIXED_DT_SECONDS, createRng, mix32 } from '@console-chaos/engine';
 
 import { TRACK, type Track } from './track.js';
+import type { WallMaterial } from './wall.js';
 
 /**
  * レースの状態（実装計画 §2.1）。
@@ -94,10 +95,11 @@ export type RacePhase = 'countdown' | 'racing' | 'finished';
 /**
  * 何に当たったか。`'none'` は当たっていない。
  *
- * 壁の材質を分けるのは 11-4。**接触した 1 ティックだけ立ち、次のティックで
- * `stepVehicle` が畳む**ので、読む側は立ち上がりを数えなくてよい。
+ * 壁は材質まで分ける（11-4）ので、音も減速も相手ごとに変えられる。
+ * **接触した 1 ティックだけ立ち、次のティックで `stepVehicle` が畳む**ので、
+ * 読む側は立ち上がりを数えなくてよい。
  */
-export type HitKind = 'none' | 'wall' | 'car';
+export type HitKind = 'none' | WallMaterial | 'car';
 
 export interface CarState {
   /** エントラント番号 0..7。0 が自機 */

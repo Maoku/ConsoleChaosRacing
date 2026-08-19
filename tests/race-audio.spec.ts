@@ -252,7 +252,7 @@ describe('効果音', () => {
     audio.clear();
     const player = race.cars[0]!;
     player.speed = 50;
-    player.hitKind = 'wall';
+    player.hitKind = 'concrete';
     player.hitStrength = 6;
     sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
     expect(audio.oneShots).toHaveLength(1);
@@ -263,6 +263,52 @@ describe('効果音', () => {
     audio.advance(FIXED_DT);
     sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
     expect(audio.oneShots).toHaveLength(0);
+  });
+
+  it('当たった相手ごとに音が変わる（11-4 / R-4）', () => {
+    // 3 つとも `playOneShot` を通るので、世代が変われば音色も変わる。
+    // ここで固定するのは「相手ごとに違う」ことと「強さが失った速度から出る」こと
+    const heard = (kind: 'concrete' | 'tyre' | 'car', strength: number) => {
+      const { audio, sfx, race } = fresh();
+      toRacing(race);
+      audio.clear();
+      const player = race.cars[0]!;
+      player.speed = 50;
+      player.hitKind = kind;
+      player.hitStrength = strength;
+      sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
+      expect(audio.oneShots).toHaveLength(1);
+      return audio.oneShots[0]!;
+    };
+
+    const concrete = heard('concrete', 6);
+    const tyre = heard('tyre', 6);
+    const car = heard('car', 6);
+
+    // タイヤは低く短く（沈んで止まる）、車は高く軽い金属音
+    expect(tyre.frequency).toBeLessThan(concrete.frequency);
+    expect(tyre.durationSeconds!).toBeLessThan(concrete.durationSeconds!);
+    expect(car.frequency).toBeGreaterThan(concrete.frequency);
+    expect(car.role).toBe('fx');
+    expect(concrete.role).toBe('perc');
+    expect(tyre.role).toBe('perc');
+  });
+
+  it('接触音の強さは失った速度から出る（自車速度ではない）', () => {
+    const velocityFor = (strength: number) => {
+      const { audio, sfx, race } = fresh();
+      toRacing(race);
+      audio.clear();
+      const player = race.cars[0]!;
+      // 速度は同じにしておく。改修前はこちらが強さを決めていた
+      player.speed = 70;
+      player.hitKind = 'concrete';
+      player.hitStrength = strength;
+      sfx.update(audio, HARDWARE_GENERATION_PROFILES.PS2, race);
+      return audio.oneShots[0]!.velocity!;
+    };
+    expect(velocityFor(1)).toBeLessThan(velocityFor(10));
+    expect(velocityFor(40)).toBe(1);
   });
 
   it('周回を跨ぐと 1 回だけ鳴る', () => {
@@ -289,7 +335,7 @@ describe('効果音', () => {
       audio.clear();
       const player = race.cars[0]!;
       player.speed = 50;
-      player.hitKind = 'wall';
+      player.hitKind = 'concrete';
       player.hitStrength = 6;
       sfx.update(audio, profile, race);
       const request = audio.oneShots[0]!;

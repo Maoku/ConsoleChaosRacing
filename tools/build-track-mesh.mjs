@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { GENERATION_IDS } from '@console-chaos/engine';
 
 import { TRACK } from '../src/game/sim/track.ts';
+import { VEHICLE, wallLateral } from '../src/game/sim/vehicle.ts';
 import {
   TRACK_ATLAS,
   TRACK_ATLAS_SLOTS,
@@ -40,8 +41,14 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CURB_WIDTH = 1.2;
 /** 縁石の落差（路面より低い） */
 const CURB_DROP = 0.08;
-/** 草地の幅（`VEHICLE.RUNOFF` と揃える。ここまでは走れる） */
-const GRASS_WIDTH = 9;
+/**
+ * 草地の幅 [m]。**壁の位置がシムと一致するように決める**（実装計画 D-9・11-4）。
+ *
+ * 以前は `VEHICLE.RUNOFF` をそのまま使っており、縁石 1.2 m を足し忘れていたため
+ * **描かれている壁がシムの壁より 1.2 m 外**にあった。車は見えている壁の手前で
+ * 見えない壁に当たっていたことになる。シムが唯一の真実なので、絵のほうを合わせる。
+ */
+const GRASS_WIDTH = VEHICLE.RUNOFF - CURB_WIDTH;
 /** 草地の外縁の落差 */
 const GRASS_DROP = 0.45;
 /**
@@ -78,7 +85,8 @@ const TILE = TRACK_ATLAS_TILES;
 function crossSection(halfWidth, columns, fenceHeight) {
   const points = [];
   const push = (lateral, height, u, tile) => points.push({ lateral, height, u, tile });
-  const outer = halfWidth + CURB_WIDTH + GRASS_WIDTH;
+  // ＝ `wallLateral(halfWidth)`。シムの壁とメッシュの壁は同じ 1 つの式から出る
+  const outer = wallLateral(halfWidth);
   const apronHeight = -GRASS_DROP + WALL_HEIGHT;
   const strips = [];
   const fence = fenceHeight ?? 0;

@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { TRACK } from '../src/game/sim/track.js';
 import type { CarState } from '../src/game/sim/state.js';
 import { createRaceState } from '../src/game/sim/state.js';
+import { WALL, wallMaterialAt } from '../src/game/sim/wall.js';
 import {
   VEHICLE,
+  wallLateral,
   gripAccel,
   offTrackSeverity,
   stepVehicle,
@@ -29,6 +31,11 @@ import {
  */
 
 const dt = FIXED_DT_SECONDS;
+
+/** 壁に当たったか。材質は問わない（11-4 で `hitKind` が材質を持つようになった） */
+function isWall(kind: string): boolean {
+  return kind === 'concrete' || kind === 'tyre';
+}
 const FULL_THROTTLE_BACK = (side: number): VehicleControl => ({
   steer: -side,
   throttle: 1,
@@ -67,7 +74,7 @@ describe('コースアウトからの復帰', () => {
     // 回帰: 以前はこの条件で 30 秒回しても壁に貼り付いたままだった。
     // ほぼ止まった状態からは舵が効かないぶん時間が掛かる（`YAW_SPEED_REF`）
     for (const s of [STRAIGHT_S, CORNER_S]) {
-      const limit = TRACK.sampleAt(s).halfWidth + VEHICLE.RUNOFF;
+      const limit = wallLateral(TRACK.sampleAt(s).halfWidth);
       for (const side of [1, -1]) {
         for (const speed of [3, 14, 40, 70]) {
           const car = carAt(s, side * limit, speed);
@@ -87,7 +94,7 @@ describe('コースアウトからの復帰', () => {
     // （曲率が要求するヨー角速度がグリップを超えるため。ブレーキを併用すれば縮む）
     const times: number[] = [];
     for (let s = 0; s < TRACK.length; s += 20) {
-      const limit = TRACK.sampleAt(s).halfWidth + VEHICLE.RUNOFF;
+      const limit = wallLateral(TRACK.sampleAt(s).halfWidth);
       for (const side of [1, -1]) {
         for (const speed of [3, 14, 40, 70]) {
           const took = secondsToRecover(carAt(s, side * limit, speed));
@@ -105,11 +112,12 @@ describe('コースアウトからの復帰', () => {
     let hits = 0;
     for (let tick = 0; tick < 60 * 3; tick++) {
       stepVehicle(car, { steer: 0.4, throttle: 1, brake: 0 }, TRACK, dt);
-      if (car.hitKind !== 'wall') continue;
+      if (!isWall(car.hitKind)) continue;
       hits += 1;
-      const limit = TRACK.sampleAt(car.s).halfWidth + VEHICLE.RUNOFF;
+      const limit = wallLateral(TRACK.sampleAt(car.s).halfWidth);
       expect(Math.abs(car.lateral)).toBeLessThan(limit);
-      expect(Math.abs(car.lateral)).toBeCloseTo(limit - VEHICLE.WALL_BOUNCE, 6);
+      const material = wallMaterialAt(TRACK, car.s, car.lateral > 0 ? 1 : -1);
+      expect(Math.abs(car.lateral)).toBeCloseTo(limit - WALL[material].bounce, 6);
       // 外を向いたヨーは殺される
       expect(car.yaw).toBeLessThan(0.4);
     }
@@ -117,35 +125,39 @@ describe('コースアウトからの復帰', () => {
   });
 
   it('壁へ舵を当て続けても接触が毎ティックにはならない（接触音が連射にならない）', () => {
-    const limit = TRACK.sampleAt(STRAIGHT_S).halfWidth + VEHICLE.RUNOFF;
+    const limit = wallLateral(TRACK.sampleAt(STRAIGHT_S).halfWidth);
     const car = carAt(STRAIGHT_S, limit - 1, 30);
     let contactTicks = 0;
     const ticks = 60 * 5;
     for (let tick = 0; tick < ticks; tick++) {
       stepVehicle(car, { steer: 1, throttle: 1, brake: 0 }, TRACK, dt);
-      if (car.hitKind === 'wall') contactTicks += 1;
+      if (isWall(car.hitKind)) contactTicks += 1;
     }
     expect(contactTicks).toBeGreaterThan(0);
     expect(contactTicks / ticks).toBeLessThan(0.1);
   });
 
-  it('壁の速度の罰は当たりの強さに比例する', () => {
-    const limit = TRACK.sampleAt(STRAIGHT_S).halfWidth + VEHICLE.RUNOFF;
+  it('壁の速度の罰は当たりの強さに比例し、掠りにも下限がある（11-4 / D-10）', () => {
+    const limit = wallLateral(TRACK.sampleAt(STRAIGHT_S).halfWidth);
     // 舵を当てずに壁へ寄せ、当たった 1 ティックで削られた速度を測る
     const lossFor = (yaw: number): number => {
       const car = carAt(STRAIGHT_S, limit - 0.5, 60, yaw);
       for (let tick = 0; tick < 60 * 2; tick++) {
         const before = car.speed;
         stepVehicle(car, { steer: 0, throttle: 1, brake: 0 }, TRACK, dt);
-        if (car.hitKind === 'wall') return before - car.speed;
+        if (isWall(car.hitKind)) return before - car.speed;
       }
       throw new Error(`yaw ${yaw} で壁へ届かなかった`);
     };
     const graze = lossFor(0.02);
     const solid = lossFor(0.2);
     const slam = lossFor(0.6);
-    expect(graze).toBeLessThan(3);
-    expect(solid).toBeGreaterThan(graze * 3);
+    // 掠りは下限（速度の 8 %）で決まる。改修前は −0.5 m/s ＝ 1 % しか削れておらず、
+    // 「壁を舐めながら走る」のがいちばん速いラインだった
+    expect(graze).toBeGreaterThan(50 * WALL.concrete.minimumLoss);
+    expect(graze).toBeLessThan(60 * WALL.concrete.minimumLoss + 0.1);
+    // 強く当たれば下限を超えて `bite` が効く
+    expect(solid).toBeGreaterThan(graze * 2);
     expect(slam).toBeGreaterThan(solid * 2);
   });
 
