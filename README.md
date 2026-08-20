@@ -1,34 +1,54 @@
 # Console Chaos Racing
 
-FC / SFC / PS1 / PS2 の 4 世代表現を 1 つのシミュレーションの上で切り替えるサーキットレース。
+![FC / SFC / PS1 / PS2 の 4 世代を同じ走行シーンで並べたスクリーンショット](preview.jpg)
+
+FC / SFC / PS1 / PS2 の 4 世代表現を 1 つのシミュレーションの上で切り替えるエンジン
+[ConsoleChaosEngine](https://github.com/Maoku/ConsoleChaosEngine)
+を使って作ったレースゲームサンプル
+
+Claude Code / Opus5 で作成したもの。
+車については
+- 画像は GPT-Image-2
+- 3Dモデルは MeshyAI
+を使って別途用意しています
 
 - 要求仕様: [`Docs/PLAN.md`](Docs/PLAN.md)
 - 実装計画: [`Docs/IMPLEMENTATION_PLAN.md`](Docs/IMPLEMENTATION_PLAN.md)
 
-不変条件は 1 つだけ — **シミュレーションは 1 つ。世代は表示と入出力の作法だけを変える**。
 
 ## セットアップ
 
-このリポジトリは **クローンしただけでは `npm install` が通らない**。描画エンジン
-`@console-chaos/engine` は npm レジストリに公開されておらず、tarball を `file:` 参照で
-取り込んでいるためである（`.gitignore` で `reference/` を除外している。実装計画 §9-5 の決定）。
+### 1. エンジンをクローンしてビルドする
 
-### 1. エンジン tarball を配置する
-
-`ConsoleChaosEngine` リポジトリで `npm pack` して生成される tarball を、本リポジトリの
-`reference/` 直下へ次の名前で置く。
-
+```bash
+git clone https://github.com/Maoku/ConsoleChaosEngine.git
+cd ConsoleChaosEngine
+npm install
+npm run pack:distribution
 ```
-reference/console-chaos-engine-0.2.0.tgz
+
+- Node.js 22 以上が必要（エンジン側 `package.json` の `engines`）。
+- `pack:distribution` は engine / engine-testkit / asset-pipeline の 3 パッケージをビルドし、
+  `artifacts/` に tarball と `SHA256SUMS` を書き出す。本リポジトリが使うのは engine 本体
+  （`artifacts/console-chaos-engine-0.2.0.tgz`）だけで、残り 2 つは不要。
+- consumer 境界まで確かめたいときは代わりに `npm run verify:distribution` を使う。tarball を
+  一時プロジェクトへオフラインインストールし、公開 API の import と型検査まで通す（その分遅い）。
+
+### 2. エンジン tarball を配置する
+
+ビルドした tarball を、本リポジトリの `reference/` 直下へ `console-chaos-engine-0.2.0.tgz`
+という名前のまま置く（`package.json` の `file:` 参照がこの名前を指している）。本リポジトリの
+ルートで、エンジンを隣に置いた場合:
+
+```bash
+cp ../ConsoleChaosEngine/artifacts/console-chaos-engine-0.2.0.tgz reference/
 ```
 
 | 項目 | 値 |
 | --- | --- |
 | パッケージ | `@console-chaos/engine@0.2.0` |
-| 生成元 | `ConsoleChaosEngine` の `npm pack`（`artifacts/console-chaos-engine-0.2.0.tgz`） |
+| 生成元 | `ConsoleChaosEngine` の `npm run pack:distribution`（`artifacts/console-chaos-engine-0.2.0.tgz`） |
 | SHA-256 | `e6b5b57c1a55179cccc3f1d690c1c481d418708f796039023dd6f4203b726d74` |
-
-配置したら現物を照合する。
 
 ```bash
 shasum -a 256 reference/console-chaos-engine-0.2.0.tgz
@@ -40,7 +60,16 @@ shasum -a 256 reference/console-chaos-engine-0.2.0.tgz
 | --- | --- |
 | 0.1.0 | `0871693e0e662fab0652970d7e54dc10acd84ec4ce2a91000973ba44d41b1786` |
 
-### 2. 依存を入れる
+**この SHA-256 は「本リポジトリが動作確認に使った現物」の指紋であって、自分でビルドした
+tarball の期待値ではない。** `npm pack` の出力は同じソースからなら 1 バイトまで再現するが、
+エンジン側の `main` は同じ `0.2.0` のまま中身が進むことがある（実際、現在の `main` を
+ビルドすると `dist/index.js` の内容が上表の tarball と一致しない）。したがって
+
+- 誰かから受け取った tarball の同一性を確かめるときだけ、上表と照合する。
+- 自分でビルドしたものに差し替えるときは、ハッシュ不一致を異常とみなさない。差し替え後に
+  `npm run build` と `npm test` を通し、実画面を確認したうえで上表を新しい値に更新する。
+
+### 3. 依存を入れる
 
 ```bash
 npm install
@@ -54,6 +83,12 @@ npm install
 rm -rf node_modules && npm install
 ```
 
+導入できたかは開発サーバの起動で確かめる。
+
+```bash
+npm run dev
+```
+
 ## 開発
 
 | コマンド | 内容 |
@@ -63,7 +98,7 @@ rm -rf node_modules && npm install
 | `npm run preview` | ビルド結果のプレビュー |
 | `npm test` | Vitest（純ロジックのテスト） |
 | `npm run typecheck` | 型チェックのみ |
-| `npm run check:cars` | 変換済み車アセットの SHA-256 照合 |
+| `npm run check:cars` | 変換済み車アセットの SHA-256 照合（※変換元 GLB は公開リポジトリに含まれないため、クローンした状態では変換元の照合が失敗する。[data/README.md](data/README.md) 参照） |
 | `npm run measure:pace` | 敵車の速度スケールとペース較正を実測（下記） |
 | `npm run build:minimap` | コース中心線からミニマップ PNG とマーカーを生成 |
 | `npm run build:assets` | 生成系アセットをまとめて再生成 |
@@ -106,5 +141,5 @@ WebGL2 が使えるブラウザ。エンジンは ESM / ES2022 前提でビル�
 
 ## ライセンス
 
-`data/` の車ソース GLB とその派生物はプロジェクト所有の入力として扱う。
-詳細は [`data/README.md`](data/README.md) を参照。
+MITライセンス
+

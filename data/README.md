@@ -2,6 +2,13 @@
 
 `gen3_car.glb` and `gen4_car.glb` are immutable source assets. Runtime builds must only reference converted files under `public/assets`.
 
+> **The source GLBs are excluded from the public repository.** `data/` is gitignored except for
+> this file, so `gen3_car.glb` and `gen4_car.glb` are **not** present in a clone. Only the
+> converted runtime files under `public/assets` are published; the game runs from those alone.
+> `npm run prepare:cars` and the source-side checks in `npm run check:cars` therefore require the
+> original sources, which are available from the repository owner. Everything below documents the
+> conversion so it stays reproducible once the sources are restored to `data/`.
+
 | Source | Added | Recorded origin | SHA-256 | Geometry | Front axis |
 | --- | --- | --- | --- | --- | --- |
 | `gen3_car.glb` | 2026-08-11 | Meshy-derived project-provided asset (`ebed515`) | `5e48569c625a00cf549069be7eb90b9bd6e87b23164bb92ad06480ee84a76c2e` | 978 triangles / 1,769 vertices | `-X` |
@@ -25,6 +32,12 @@ npm run prepare:cars            # reconvert in memory and compare against the co
 npm run prepare:cars -- --write # actually overwrite the runtime GLBs and the record
 npm run check:cars              # SHA-256 of every recorded file
 ```
+
+`check:cars` verifies three files per generation — the source GLB, the runtime GLB, and the
+runtime texture — so **on a fresh clone it fails**: the two source entries report `ENOENT` and the
+script exits with status 1, even though the runtime files it also checks are intact. That is
+expected without the sources in `data/`. To verify only what a clone actually ships, check the
+runtime files and skip the source entries; a full pass requires restoring the sources first.
 
 The paths in `public/assets/car-conversion.json` are repository-root relative, so both tools read
 them as-is. `prepare:cars` reproduces both runtime GLBs **byte for byte** from the sources, and

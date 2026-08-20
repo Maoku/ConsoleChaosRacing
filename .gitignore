@@ -3,3 +3,6 @@ dist/
 coverage/
 reference/
 .DS_Store
+data/*
+!data/README.md
+Docs/screenshots/
