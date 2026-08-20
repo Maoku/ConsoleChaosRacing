@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Console Chaos Racing</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #05070c;
+        color: #cbd5e1;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow: hidden;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+      }
+      #game {
+        /* 4:3 のブラウン管比率を保ったまま画面いっぱいに広げる */
+        width: min(100vw, calc(100vh * 4 / 3));
+        height: min(100vh, calc(100vw * 3 / 4));
+        display: block;
+        image-rendering: pixelated;
+        background: #000;
+      }
+      #hint {
+        position: fixed;
+        left: 12px;
+        bottom: 10px;
+        font-size: 12px;
+        opacity: 0.55;
+        pointer-events: none;
+        user-select: none;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+        letter-spacing: 0.1em;
+        background: #05070c;
+      }
+      #boot[hidden] {
+        display: none;
+      }
+    </style>
+    <script type="module" crossorigin src="./assets/index-Db-pc_Cx.js"></script>
+  </head>
+  <body>
+    <div id="stage"><canvas id="game"></canvas></div>
+    <div id="hint">
+      &larr;&rarr; STEER / Z ACCEL / X BRAKE / C VIEW / Q E CHANNEL / 1-4 SELECT CHANNEL /
+      ESC PAUSE / BACKSPACE TITLE
+    </div>
+    <div id="boot">LOADING…</div>
+  </body>
+</html>
