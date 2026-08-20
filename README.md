@@ -6,6 +6,8 @@ FC / SFC / PS1 / PS2 の 4 世代表現を 1 つのシミュレーションの�
 [ConsoleChaosEngine](https://github.com/Maoku/ConsoleChaosEngine)
 を使って作ったレースゲームサンプル
 
+**ブラウザですぐ遊べる: https://maoku.github.io/ConsoleChaosRacing/**
+
 Claude Code / Opus5 で作成したもの。
 車については
 - 画像は GPT-Image-2
@@ -96,6 +98,7 @@ npm run dev
 | `npm run dev` | Vite 開発サーバ（http://localhost:5173） |
 | `npm run build` | 型チェック＋本番ビルド（`dist/`） |
 | `npm run preview` | ビルド結果のプレビュー |
+| `npm run deploy:pages` | `dist/` を `gh-pages` ブランチへ公開（下記） |
 | `npm test` | Vitest（純ロジックのテスト） |
 | `npm run typecheck` | 型チェックのみ |
 | `npm run check:cars` | 変換済み車アセットの SHA-256 照合（※変換元 GLB は公開リポジトリに含まれないため、クローンした状態では変換元の照合が失敗する。[data/README.md](data/README.md) 参照） |
@@ -134,6 +137,28 @@ npm run measure:pace
 | Backspace | タイトルへ戻る |
 
 タイトル画面を 5 秒放置すると、5 秒ごとに 1 → 4 世代を巡回する（何か操作すると止まる）。
+
+## GitHub Pages へ公開する
+
+公開先は https://maoku.github.io/ConsoleChaosRacing/ 、配信元は `gh-pages` ブランチの
+ルート（リポジトリの Settings → Pages → Source: *Deploy from a branch*）。
+
+```bash
+npm run build
+npm run deploy:pages
+```
+
+`tools/deploy-pages.sh` が `dist/` をそのまま `gh-pages` ブランチへ置いて push する。
+`.nojekyll` も一緒に置くので Jekyll の加工は入らない。
+
+**ビルドは手元で行い、GitHub Actions では行わない。** 本リポジトリはエンジンを Git 管理外の
+`reference/console-chaos-engine-0.2.0.tgz` から `file:` で参照しているため（上記セットアップ）、
+クローンしただけの環境では `npm install` が通らない。エンジンの `main` から都度ビルドし直すと
+中身が動作確認したものとずれる（「セットアップ」§2 の注記）。手元で確かめた現物をそのまま
+配るほうが再現性が高い。
+
+Vite の `base` は `'./'`（`vite.config.ts`）。生成物の参照が相対パスになるので、
+`/ConsoleChaosRacing/` のようなサブパス配信でも素材の 404 が起きない。
 
 ## 動作要件
 

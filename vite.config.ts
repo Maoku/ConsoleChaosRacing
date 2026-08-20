@@ -39,6 +39,10 @@ export default defineConfig({
   plugins: [screenshotEndpoint()],
   // リポジトリルート = アプリルート（Docs/IMPLEMENTATION_PLAN.md §2.4）
   root: '.',
+  // 生成物の参照を相対パスにする。GitHub Pages のプロジェクトサイトは
+  // `/<リポジトリ名>/` 配下に置かれるため、絶対パス（`/assets/...`）だと 404 になる。
+  // ソース側の素材参照（`assets/gen1/...` など）はもともと相対なので、これで両方揃う。
+  base: './',
   publicDir: 'public',
   build: {
     target: 'es2022',
