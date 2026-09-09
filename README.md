@@ -102,6 +102,7 @@ npm run dev
 | `npm test` | Vitest（純ロジックのテスト） |
 | `npm run typecheck` | 型チェックのみ |
 | `npm run check:cars` | 変換済み車アセットの SHA-256 照合（※変換元 GLB は公開リポジトリに含まれないため、クローンした状態では変換元の照合が失敗する。[data/README.md](data/README.md) 参照） |
+| `npm run prepare:cars` | 変換元 GLB から車の runtime GLB と base color テクスチャを焼き直す（`-- --write` で書き出し。姿勢・原点・寸法の正規化を焼き込む。※変換元が要る） |
 | `npm run measure:pace` | 敵車の速度スケールとペース較正を実測（下記） |
 | `npm run build:minimap` | コース中心線からミニマップ PNG とマーカーを生成 |
 | `npm run build:assets` | 生成系アセットをまとめて再生成 |
