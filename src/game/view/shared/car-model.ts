@@ -42,12 +42,12 @@ export const CAR_MODELS: GenerationVariant<CarModel | null> = defineGenerationVa
   PS1: {
     asset: 'assets/gen3/models/car.glb',
     texture: 'assets/gen3/textures/car_base_color.png',
-    bounds: { length: 1.878669, height: 0.481409, width: 0.86497, bottom: 0.248532 },
+    bounds: { length: 1.863012, height: 0.469346, width: 0.86497, bottom: 0.234673 },
   },
   PS2: {
     asset: 'assets/gen4/models/car.glb',
     texture: 'assets/gen4/textures/car_base_color.png',
-    bounds: { length: 1.906066, height: 0.497064, width: 0.880626, bottom: 0.248532 },
+    bounds: { length: 1.896733, height: 0.454939, width: 0.880626, bottom: 0.227470 },
   },
 });
 
