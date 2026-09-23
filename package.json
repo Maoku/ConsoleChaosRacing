@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -36,10 +39,10 @@
     "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
-    "tsx": "^4.19.2",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }
