@@ -1,48 +1,125 @@
 {
-  "version": 1,
+  "version": 2,
   "records": [
     {
       "generation": "PS1",
       "source": {
-        "path": "data/gen3_car.glb",
-        "sha256": "5e48569c625a00cf549069be7eb90b9bd6e87b23164bb92ad06480ee84a76c2e",
-        "bytes": 17839564
+        "path": "data/gen3_car_tripo.glb",
+        "sha256": "2748483e13ea15abaf23ca1a131e0627ac5ed47133d4605f28e634c417008661",
+        "bytes": 137928
+      },
+      "normalize": {
+        "yawDegrees": 32.4,
+        "frontAxisFrom": "+Z",
+        "targetWidth": 0.86497,
+        "lengthPerWidth": 2.153846153846154
       },
       "runtime": {
         "model": {
           "path": "public/assets/gen3/models/car.glb",
-          "sha256": "e2241c7c15cc3bf694848c71a6c3fbc45727b0d79b4369c1cd6e5ebad3d4958c",
-          "bytes": 63524
+          "sha256": "c9cf74a6df81e87f4ef3a7f596e2d609848afed40ea8aa9f3e7f8f4ea8d51b97",
+          "bytes": 29080,
+          "triangles": 676,
+          "vertices": 747
         },
         "texture": {
           "path": "public/assets/gen3/textures/car_base_color.png",
-          "sha256": "ac7d73740855fe9974e78c043d6f388296e22cdbdc9d8514aa710e26cf10dd49",
-          "bytes": 126165,
+          "sha256": "352f8a4e76f3f1ac30d06364c5f63eacbc37cef619770cf6bc2a7eea59723b31",
+          "bytes": 125050,
           "dimensions": [
             256,
             256
           ]
+        },
+        "wheels": {
+          "phases": 8,
+          "triangles": 288,
+          "vertices": 354,
+          "radius": 0.12495077401399612,
+          "axles": [
+            [
+              -0.49456094205379486,
+              -0.10972239822149277,
+              -0.3364817798137665
+            ],
+            [
+              -0.4714575856924057,
+              -0.10035108868032694,
+              0.3386519104242325
+            ],
+            [
+              0.580485925078392,
+              -0.10894145630300045,
+              -0.31647545099258423
+            ],
+            [
+              0.5796771496534348,
+              -0.09917967673391104,
+              0.3208083212375641
+            ]
+          ],
+          "files": [
+            {
+              "path": "public/assets/gen3/models/car_wheels_0.glb",
+              "sha256": "e7cfba279cfeb910470f215e6a39f827419a499cfc5ba95aa5490db13bfc49cc",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_1.glb",
+              "sha256": "d9c80e174cd907ad786f7310e3c487d65bb8adeb7baf8eef50a80b9d4e02e3f8",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_2.glb",
+              "sha256": "b621bb58892a2319007ca4d72c7e60a35af3a4aa19f9462973ea52a46aaa5817",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_3.glb",
+              "sha256": "c82ab571468d36479b3a7e51367305f4864b3a32fc5367b05978c4460ed21e4a",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_4.glb",
+              "sha256": "a7e2da53250dc83e8edc0adf363c476b4ce842d5a49c293ba1d71eeb9041f7f2",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_5.glb",
+              "sha256": "4357542ff3a842e62b67d0a1fb827a0812ca4f7e4dc8c468c2049afa13307328",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_6.glb",
+              "sha256": "0b3d09669eb85760d2ca2507cbbab410b061c5e5b2d3313486546155951210eb",
+              "bytes": 14176
+            },
+            {
+              "path": "public/assets/gen3/models/car_wheels_7.glb",
+              "sha256": "27e1ce231436bf2b5c4ba13d37aa5c16f446e54038287a498e0fd5c59426b01c",
+              "bytes": 14176
+            }
+          ]
         }
       },
       "geometry": {
-        "fingerprint": "563cd6ac12debde11146595b4b4543a131407876e3474b14267e7ade40bc8146",
-        "triangles": 978,
-        "vertices": 1769,
+        "triangles": 964,
+        "vertices": 1101,
         "bounds": {
           "min": [
-            -0.9334640502929688,
-            -0.24853204190731049,
-            -0.43248504400253296
+            -0.9315061569213867,
+            -0.2346731722354889,
+            -0.43248501420021057
           ],
           "max": [
-            0.94520503282547,
-            0.23287703096866608,
-            0.43248504400253296
+            0.9315061569213867,
+            0.2346731722354889,
+            0.43248501420021057
           ],
           "size": [
-            1.8786690831184387,
-            0.48140907287597656,
-            0.8649700880050659
+            1.8630123138427734,
+            0.4693463444709778,
+            0.8649700284004211
           ]
         }
       },
@@ -51,44 +128,121 @@
     {
       "generation": "PS2",
       "source": {
-        "path": "data/gen4_car.glb",
-        "sha256": "b00d08a2f81790a39bdd8fb6f5c2214cb0bf0b15a1c61edc033fbb00de846c94",
-        "bytes": 6049508
+        "path": "data/gen4_car_tripo.glb",
+        "sha256": "34840cb145c72d2abc13443b44e7bbb2afa039f57bcbeae5ced483339051fe10",
+        "bytes": 768872
+      },
+      "normalize": {
+        "yawDegrees": 34.4,
+        "frontAxisFrom": "+Z",
+        "targetWidth": 0.880626,
+        "lengthPerWidth": 2.153846153846154
       },
       "runtime": {
         "model": {
           "path": "public/assets/gen4/models/car.glb",
-          "sha256": "9abe9b04082cfd054535c9aa9bdd580717d1a4fd124b604850a78c551f1ec771",
-          "bytes": 593132
+          "sha256": "3688326c9dd106b0a6403fd97daf24d2f0308aac3b342e92a19ebf5304975a5c",
+          "bytes": 244528,
+          "triangles": 5339,
+          "vertices": 6605
         },
         "texture": {
           "path": "public/assets/gen4/textures/car_base_color.png",
-          "sha256": "4bef7d3111b223fe71dcbd9644adc3b6c7fd504dacea117b04f43f565311c610",
-          "bytes": 1261377,
+          "sha256": "0422ae4ead75c66c3bea2b0d36b7ffdfe1d7a54bafd6c8104647173cc3685805",
+          "bytes": 1844634,
           "dimensions": [
             1024,
             1024
           ]
+        },
+        "wheels": {
+          "phases": 8,
+          "triangles": 2658,
+          "vertices": 3372,
+          "radius": 0.1202395441941917,
+          "axles": [
+            [
+              -0.4931674599647522,
+              -0.1072300192900002,
+              -0.3321303278207779
+            ],
+            [
+              -0.4859583377838135,
+              -0.10604733554646373,
+              0.32553906738758087
+            ],
+            [
+              0.5363727957010269,
+              -0.10604733554646373,
+              -0.34511949121952057
+            ],
+            [
+              0.5274325609207153,
+              -0.10604733554646373,
+              0.34342072904109955
+            ]
+          ],
+          "files": [
+            {
+              "path": "public/assets/gen4/models/car_wheels_0.glb",
+              "sha256": "a696e944110036bba4745dd201a6a06537c3a76fa6bc1127f07ef31e45c16006",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_1.glb",
+              "sha256": "2414dc5646a131e2df781e2481105ab92c14f5d02b5c5f0e9192eb59105fdad5",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_2.glb",
+              "sha256": "ff610fdd86a49a904ec6b62af27620f0ef46a1042c21d671465bf802fe7138bc",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_3.glb",
+              "sha256": "7d1f3a61bbf52b484fb02fcd1d19de40499bf6a41e6f8b9b460be6a6bb28e4b5",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_4.glb",
+              "sha256": "816c2bcc8ea35f2900947a3b04141caea443bb6ec0dcfad506cbf355ea45b4c3",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_5.glb",
+              "sha256": "48cddf032c4c8929ce98337ff1620fae30c79df07f09d80c7492d1097a26d222",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_6.glb",
+              "sha256": "e3d989a15ad0145327f62273b98e57784edf96fa25b07756251edf10e3f8eb2b",
+              "bytes": 124984
+            },
+            {
+              "path": "public/assets/gen4/models/car_wheels_7.glb",
+              "sha256": "9a4a0c8992734e5336e53c309d8611698eefdac4b1b3bc79cddd01ef0aee2d8b",
+              "bytes": 124984
+            }
+          ]
         }
       },
       "geometry": {
-        "fingerprint": "e61d6376caa5f25d55099d8cf170626ac5a34144d03e79828cb86b2e4194ae50",
-        "triangles": 13618,
-        "vertices": 13396,
+        "triangles": 7997,
+        "vertices": 9977,
         "bounds": {
           "min": [
-            -0.9530329704284668,
-            -0.2485319972038269,
+            -0.9483664631843567,
+            -0.2274695634841919,
             -0.4403130114078522
           ],
           "max": [
-            0.9530329704284668,
-            0.2485319972038269,
+            0.9483664631843567,
+            0.2274695634841919,
             0.4403130114078522
           ],
           "size": [
-            1.9060659408569336,
-            0.4970639944076538,
+            1.8967329263687134,
+            0.4549391269683838,
             0.8806260228157043
           ]
         }
