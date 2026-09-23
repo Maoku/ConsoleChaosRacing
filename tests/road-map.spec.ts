@@ -49,6 +49,7 @@ function displayCar(s: number, lateral: number) {
     offTrack: false,
     lateralAccel: 0,
     longitudinalAccel: 0,
+    brakeInput: 0,
     lapStartTick: 0,
     bestLapTicks: -1,
     finished: false,

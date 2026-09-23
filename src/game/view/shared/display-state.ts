@@ -27,6 +27,13 @@ export interface DisplayCar {
   readonly offTrack: boolean;
   readonly lateralAccel: number;
   readonly longitudinalAccel: number;
+  /**
+   * ブレーキの踏み量 0..1（フェーズ 12-7）。テールランプの明るさがこれで決まる。
+   *
+   * 減速度（`longitudinalAccel`）では代用できない。アクセルを離しただけでも負になるし、
+   * **他車のブレーキは AI の入力そのもの**だからで、8 台ぶんが等しく必要になる。
+   */
+  readonly brakeInput: number;
   // ── HUD が読む値。ラップタイムも表示の更新レートで止まる（実装計画 §3.5）
   /** 現在の周が始まった tick。まだラインを越えていなければ -1 */
   readonly lapStartTick: number;
@@ -73,6 +80,7 @@ function copyCar(car: CarState): DisplayCar {
     offTrack: car.offTrack,
     lateralAccel: car.lateralAccel,
     longitudinalAccel: car.longitudinalAccel,
+    brakeInput: car.brakeInput,
     lapStartTick: car.lapStartTick,
     bestLapTicks: car.bestLapTicks,
     finished: car.finished,

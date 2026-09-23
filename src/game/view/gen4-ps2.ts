@@ -11,10 +11,15 @@ import type {
 
 import type { ViewContext } from './context.js';
 import {
+  CAR_LAMP_COLORS,
+  carLampsFor,
+  carLampsVisible,
   carModelFor,
   carModelScale,
   carTextureFor,
   carTransform,
+  carWheelAsset,
+  carWheelPhase,
 } from './shared/car-model.js';
 import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { cockpitSprites } from './shared/cockpit.js';
@@ -158,6 +163,14 @@ const KEY_LIGHT = { height: 40, radius: 44, color: '#fff2d8', intensity: 0.3 } a
  * 1.1 m ずつはみ出し、影が車の 2 倍の幅で路面に落ちる。
  */
 const SHADOW_HALF_RATIO = 0.5;
+
+/**
+ * テールランプのマテリアル（12-7）。トンネルの灯具と同じで、`ambient` を 1 より
+ * 大きく採って照明に関係なく明るく残す（`diffuse` は 0）。**映り込みは掛けない** —
+ * 光っている面に空が映ると濁る。引くテクセルは塗装テクスチャの明るい無彩色 1 点で、
+ * 灯火の色は `MeshCommand.color` の乗算だけで決まる。
+ */
+const LAMP_SURFACE = { ambient: 4, diffuse: 0 } as const;
 
 /**
  * ライバルを描く上限距離 [m]。フォグが 95% を超えるとほぼ背景と区別が付かない。
@@ -311,6 +324,17 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
   };
   frame.materials.push(carMaterial);
 
+  // 灯火（12-7）。車体と違って環境マップを持たない 1 つだけのマテリアル
+  const lampMaterial: MaterialCommand = {
+    id: `car-lamp-${generation}`,
+    baseColorTexture: carTextureFor(generation),
+    uvMode: 'perspective',
+    ...LAMP_SURFACE,
+    generations: [generation],
+  };
+  const lamps = carLampsFor(generation);
+  if (lamps) frame.materials.push(lampMaterial);
+
   // 影を落とすためだけのメッシュが使うマテリアル。全画素を捨てる（`SHADOW_HALF_RATIO`）
   const shadowMaterial: MaterialCommand = {
     id: `car-shadow-${generation}`,
@@ -345,6 +369,34 @@ export function buildGen4View(frame: RenderFrame, context: ViewContext): void {
       material: carMaterial.id,
       generations: [generation],
     } satisfies MeshCommand);
+
+    // ── 車輪（12-7）。車体 GLB から切り離してあるので**必ず一緒に積む**。
+    // 位相を焼いた 8 枚から走った距離で 1 枚を選ぶ。深度バッファがあるので
+    // 積む順は問わない（第3世代がここで順序を作っているのと対になる）。
+    // 車体色は掛けない — 塗装テクスチャは無彩色なので、白のままがゴムと金属の色になる
+    frame.meshes.push({
+      id: `car-wheels-${generation}-${car.entrant}`,
+      geometry: TRACK_GEOMETRY,
+      asset: carWheelAsset(generation, carWheelPhase(generation, car.s)),
+      transform,
+      color: '#ffffff',
+      material: carMaterial.id,
+      generations: [generation],
+    } satisfies MeshCommand);
+
+    // ── テールランプ（12-7）。後ろを向いた一枚面なので、前から見た車では
+    // 背面カリングで消える。明るさはブレーキの踏み量で混ぜる
+    if (lamps && carLampsVisible(track, car, camera.position)) {
+      frame.meshes.push({
+        id: `car-lamp-${generation}-${car.entrant}`,
+        geometry: TRACK_GEOMETRY,
+        asset: lamps.asset,
+        transform,
+        color: mixColor(CAR_LAMP_COLORS.idle, CAR_LAMP_COLORS.brake, car.brakeInput),
+        material: lampMaterial.id,
+        generations: [generation],
+      } satisfies MeshCommand);
+    }
 
     frame.meshes.push({
       id: `car-shadow-${generation}-${car.entrant}`,

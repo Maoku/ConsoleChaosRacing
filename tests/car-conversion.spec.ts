@@ -5,7 +5,7 @@ import { parseGlb, parseGltf, type GltfModel, type GltfPrimitive } from '@consol
 import { describe, expect, it } from 'vitest';
 
 import { VEHICLE } from '../src/game/sim/vehicle.js';
-import { CAR_MODELS } from '../src/game/view/shared/car-model.js';
+import { CAR_MODELS, carWheelAsset } from '../src/game/view/shared/car-model.js';
 
 /**
  * 変換器が焼き込んだ正規化が現物に効いているかを検査する
@@ -27,7 +27,17 @@ interface ConversionRecord {
   records: {
     generation: 'PS1' | 'PS2';
     normalize: { yawDegrees: number; targetWidth: number; lengthPerWidth?: number };
-    runtime: { model: { path: string } };
+    runtime: {
+      model: { path: string; triangles: number; vertices: number };
+      wheels: {
+        phases: number;
+        triangles: number;
+        vertices: number;
+        radius: number;
+        axles: number[][];
+        files: { path: string; bytes: number }[];
+      };
+    };
     geometry: { triangles: number; vertices: number; bounds: { min: number[]; max: number[] } };
     frontAxis: string;
   }[];
@@ -37,8 +47,8 @@ const record: ConversionRecord = JSON.parse(
   readFileSync(join(process.cwd(), 'public/assets/car-conversion.json'), 'utf8'),
 );
 
-function loadCar(generation: 'PS1' | 'PS2'): { model: GltfModel; primitive: GltfPrimitive } {
-  const bytes = readFileSync(join(process.cwd(), 'public', CAR_MODELS[generation]!.asset));
+function loadPart(url: string): { model: GltfModel; primitive: GltfPrimitive } {
+  const bytes = readFileSync(join(process.cwd(), 'public', url));
   const { json, binary } = parseGlb(
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
   );
@@ -46,6 +56,27 @@ function loadCar(generation: 'PS1' | 'PS2'): { model: GltfModel; primitive: Gltf
   expect(model.meshes).toHaveLength(1);
   expect(model.meshes[0]!.primitives).toHaveLength(1);
   return { model, primitive: model.meshes[0]!.primitives[0]! };
+}
+
+/** 車体（タイヤを除く）。実行時に `CAR_MODELS.asset` として積まれるもの */
+function loadCar(generation: 'PS1' | 'PS2'): { model: GltfModel; primitive: GltfPrimitive } {
+  return loadPart(CAR_MODELS[generation]!.asset);
+}
+
+/**
+ * 分割前の車 ＝ 車体 ＋ 車輪（位相 0）の頂点（12-7）。
+ *
+ * 記録の `geometry` と `CAR_MODELS.bounds` は**分割前の全体**を指す。
+ * 車輪を切り出したぶん車体だけでは最下点が上がる（実測 -0.235 → -0.185）ので、
+ * 接地の意味を持つ `bounds.bottom` はここで突き合わせないと嘘になる。
+ */
+function loadWholeCar(generation: 'PS1' | 'PS2'): Float32Array {
+  const body = loadCar(generation).primitive.positions;
+  const wheels = loadPart(carWheelAsset(generation, 0)).primitive.positions;
+  const whole = new Float32Array(body.length + wheels.length);
+  whole.set(body, 0);
+  whole.set(wheels, body.length);
+  return whole;
 }
 
 function entryFor(generation: 'PS1' | 'PS2') {
@@ -275,19 +306,31 @@ describe('車モデルの変換', () => {
         expect(primitive.normals).not.toBeNull();
       });
 
-      it('三角形数と頂点数が記録どおり', () => {
-        expect(primitive.indices.length / 3).toBe(entry.geometry.triangles);
-        expect(primitive.positions.length / 3).toBe(entry.geometry.vertices);
+      it('三角形数と頂点数が記録どおり（車体 ＋ 車輪 ＝ 分割前）', () => {
+        const wheels = loadPart(carWheelAsset(generation, 0)).primitive;
+        expect(primitive.indices.length / 3).toBe(entry.runtime.model.triangles);
+        expect(primitive.positions.length / 3).toBe(entry.runtime.model.vertices);
+        expect(wheels.indices.length / 3).toBe(entry.runtime.wheels.triangles);
+        expect(wheels.positions.length / 3).toBe(entry.runtime.wheels.vertices);
+        // **分割は可逆**。足すと分割前の全体にちょうど戻る（`prepare-cars.mjs` の主張）
+        expect(entry.runtime.model.triangles + entry.runtime.wheels.triangles).toBe(
+          entry.geometry.triangles,
+        );
+        expect(entry.runtime.model.vertices + entry.runtime.wheels.vertices).toBe(
+          entry.geometry.vertices,
+        );
       });
 
       it('頂点の実測 bounds が記録の min/max と一致する', () => {
         // accessor の min/max はコピーではなく変換後の値から採り直している。
-        // ここを取りこぼすと記録と現物が食い違い、CAR_MODELS.bounds が嘘になる
+        // ここを取りこぼすと記録と現物が食い違い、CAR_MODELS.bounds が嘘になる。
+        // 測るのは**車体 ＋ 車輪**（記録の geometry は分割前を指す・12-7）
+        const positions = loadWholeCar(generation);
         const min = [Infinity, Infinity, Infinity];
         const max = [-Infinity, -Infinity, -Infinity];
-        for (let base = 0; base < primitive.positions.length; base += 3) {
+        for (let base = 0; base < positions.length; base += 3) {
           for (let axis = 0; axis < 3; axis++) {
-            const value = primitive.positions[base + axis]!;
+            const value = positions[base + axis]!;
             if (value < min[axis]!) min[axis] = value;
             if (value > max[axis]!) max[axis] = value;
           }

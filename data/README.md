@@ -38,6 +38,17 @@ Conversion rules:
 - Preserve POSITION, NORMAL, TEXCOORD_0, indices and the triangle count. **Bounds are not
   preserved** — they are the output of the normalization, recomputed from the Float32 positions and
   written back into both the accessor `min`/`max` and the record.
+- **Split the wheels out of the body and bake their rotation phases** (phase 12-7). The runtime
+  `TransformCommand` has only `rotationY`, so a wheel can never be spun about its axle at runtime.
+  The converter finds the four wheels as connected components (the sources keep them as separate
+  shells: 4 in gen3, 6 plus two hub caps per axle in gen4), writes the body without them to
+  `car.glb`, and writes `car_wheels_<phase>.glb` for each of the 8 phases. The rotation happens in
+  the *source* space — the normalization stretches front/back by ~1.10, so rotating the resulting
+  ellipse rigidly makes the outline wobble (bounds drift 0.0160 / 0.0239 model units against
+  0.0050 / 0.0110 when the anisotropy is undone first). The split is lossless: body plus phase 0
+  add back up to the triangle and vertex counts recorded in `geometry`, which still describes the
+  whole car — that is what keeps `CAR_MODELS.bounds` (and the ground offset taken from it) honest.
+  The measured axle centres and wheel radius are recorded in `runtime.wheels`.
 - Remove material, image and unused vertex attributes from runtime GLBs.
 - **Decode the embedded base color and rebuild the runtime texture** (`tools/lib/jpeg.mjs` for the
   baseline JPEG the sources carry, then an integer box downscale and `tools/lib/png.mjs`).
@@ -52,15 +63,23 @@ npm run prepare:cars -- --write # actually overwrite the runtime GLBs and the re
 npm run check:cars              # SHA-256 of every recorded file
 ```
 
-`check:cars` verifies three files per generation — the source GLB, the runtime GLB, and the
-runtime texture — so **on a fresh clone it fails**: the two source entries report `ENOENT` and the
+`tools/build-car-lamps.mjs` (`npm run build:lamps`) then reads the runtime body and the greyscale
+paint texture and bakes `car_lamps.glb` — two surface-hugging strips on the rear panel, measured
+from the rear-facing vertices. Tail lamps cannot come from the texture: the paint texture flattens
+the source's red lamps to grey, and `MaterialCommand.emissiveTexture` exists in the type but is
+never read by the renderer. The strips sample one bright neutral texel, so the lamp colour is a
+single runtime multiply (dim when coasting, bright under braking) and no texture is added.
+
+`check:cars` verifies the source GLB, the runtime body, every wheel phase and the runtime texture
+for each generation, so **on a fresh clone it fails**: the two source entries report `ENOENT` and the
 script exits with status 1, even though the runtime files it also checks are intact. That is
 expected without the sources in `data/`. To verify only what a clone actually ships, check the
 runtime files and skip the source entries; a full pass requires restoring the sources first.
 
 The paths in `public/assets/car-conversion.json` are repository-root relative, so both tools read
-them as-is. `prepare:cars` reproduces both runtime GLBs **byte for byte** from the sources, and
-running it twice produces identical output.
+them as-is. `prepare:cars` reproduces every runtime GLB — the body and all eight wheel
+phases per generation — **byte for byte** from the sources, and running it twice produces identical
+output.
 
 One limit is worth stating plainly:
 

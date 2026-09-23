@@ -146,7 +146,10 @@ describe('フレームの契約', () => {
     const carMeshes = frame.meshes.filter((mesh) => mesh.id.startsWith('car-'));
 
     expect(trackMeshes.length).toBeGreaterThan(0);
-    expect(carMeshes).toHaveLength(8);
+    // 1 台は車体・車輪・灯火（後ろを向いている台だけ）でできている（12-7）
+    expect(carMeshes.filter((mesh) => mesh.id.startsWith('car-PS1-'))).toHaveLength(8);
+    expect(carMeshes.filter((mesh) => mesh.id.startsWith('car-wheels-PS1-'))).toHaveLength(8);
+    expect(carMeshes.filter((mesh) => mesh.id.startsWith('car-lamp-PS1-')).length).toBeLessThanOrEqual(8);
 
     for (const mesh of trackMeshes) {
       expect(mesh.polygonSortRange).toEqual([1, 8]);

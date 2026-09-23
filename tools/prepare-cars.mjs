@@ -22,7 +22,7 @@
  * 書いてある。**実行時に探索はしない** — 1 回だけ実測して定数化する、という作法に従う。
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +40,32 @@ const FLOAT = 5126;
 
 /** runtime GLB に残す頂点属性。この順で accessors へ並べ直す */
 const KEPT_ATTRIBUTES = ['POSITION', 'NORMAL', 'TEXCOORD_0'];
+
+/**
+ * 車輪を焼き分ける回転位相の数（実装計画 フェーズ 12-7）。
+ *
+ * 実行時の `TransformCommand` は `rotationY` と等方 scale しか持たないので、
+ * **車軸（横軸）まわりの回転は実行時には作れない**。位相を焼いた車輪 GLB を
+ * `WHEEL_PHASES` 枚用意し、フレームごとに `MeshCommand.asset` を差し替えて回す。
+ *
+ * スキン（`SkinnedMeshCommand`）を使わないのは、レンダラーのスキン経路が
+ * マテリアルを読まないためである（`uEnvironmentStrength: 0`・`uAmbient` は
+ * 0.45 固定・`uAlphaCutoff: 0`）。第4世代でタイヤだけ映り込みも陰影も
+ * 車体と別系統になってしまう。位相を焼けば通常のメッシュ経路に乗り、
+ * 車体とまったく同じマテリアルで描ける。
+ *
+ * 8 枚 ＝ 45° 刻み。表示は 30Hz にラッチされているので（`DisplayLatch`）、
+ * 実速度ではこれより 1 フレームの進みのほうが大きい。
+ */
+const WHEEL_PHASES = 8;
+
+const COMPONENT_ARRAYS = {
+  5121: Uint8Array,
+  5123: Uint16Array,
+  5125: Uint32Array,
+  5126: Float32Array,
+};
+const COMPONENT_COUNTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
 
 const GENERATOR = 'Console Chaos Racing deterministic car converter';
 
@@ -107,6 +133,269 @@ function readVec3(json, binary, accessorIndex) {
     binary.buffer.slice(binary.byteOffset + start, binary.byteOffset + start + accessor.count * 12),
   );
   return Float64Array.from(source);
+}
+
+/**
+ * accessor をそのままの型で取り出す（tightly packed 前提）。
+ * `readVec3` と違い中身は加工しない — 部分集合を切り出すときの元データになる。
+ */
+function readAccessor(json, binary, accessorIndex, expectedType) {
+  const accessor = json.accessors[accessorIndex];
+  if (accessor.sparse) throw new Error('スパースアクセサは非対応');
+  if (accessor.type !== expectedType) throw new Error(`${expectedType} ではない accessor`);
+  const view = json.bufferViews[accessor.bufferView];
+  if (view.byteStride !== undefined) throw new Error('byteStride つきの bufferView は非対応');
+  const Ctor = COMPONENT_ARRAYS[accessor.componentType];
+  if (!Ctor) throw new Error(`未対応の componentType: ${accessor.componentType}`);
+  const components = COMPONENT_COUNTS[accessor.type];
+  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  const length = accessor.count * components * Ctor.BYTES_PER_ELEMENT;
+  return new Ctor(binary.buffer.slice(binary.byteOffset + start, binary.byteOffset + start + length));
+}
+
+/**
+ * 位置で溶接した頂点の連結成分。**タイヤはこれで車体から切り離せる。**
+ *
+ * Tripo の出力は 1 メッシュ 1 プリミティブだが、タイヤは車体と面を共有しない
+ * 独立した殻として入っている（実測: 第3世代 4 個・第4世代 6 個）。UV の継ぎ目で
+ * 頂点が複製されているので、**位置で溶接してから**辿らないと 1 つの殻が割れる。
+ */
+function connectedComponents(positions, indices) {
+  const count = positions.length / 3;
+  const parent = new Int32Array(count);
+  const welded = new Map();
+  for (let vertex = 0; vertex < count; vertex++) {
+    // Float32 の値をそのまま鍵にする。丸めを挟むと溶接の結果が閾値依存になる
+    const key = `${positions[vertex * 3]},${positions[vertex * 3 + 1]},${positions[vertex * 3 + 2]}`;
+    const first = welded.get(key);
+    if (first === undefined) {
+      welded.set(key, vertex);
+      parent[vertex] = vertex;
+    } else {
+      parent[vertex] = first;
+    }
+  }
+  const find = (start) => {
+    let index = start;
+    while (parent[index] !== index) {
+      parent[index] = parent[parent[index]];
+      index = parent[index];
+    }
+    return index;
+  };
+  const union = (a, b) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootB] = rootA;
+  };
+  for (let triangle = 0; triangle < indices.length; triangle += 3) {
+    union(indices[triangle], indices[triangle + 1]);
+    union(indices[triangle], indices[triangle + 2]);
+  }
+
+  const label = new Int32Array(count);
+  const roots = new Map();
+  for (let vertex = 0; vertex < count; vertex++) {
+    const root = find(vertex);
+    let id = roots.get(root);
+    if (id === undefined) {
+      id = roots.size;
+      roots.set(root, id);
+    }
+    label[vertex] = id;
+  }
+  return { label, count: roots.size };
+}
+
+/**
+ * 連結成分のうち「四隅のタイヤ」を選ぶ規則（フェーズ 12-7）。
+ *
+ * **形と位置だけで選ぶ。** 頂点数や成分の順番に頼ると、モデルを差し替えた
+ * 瞬間に静かに壊れる。実測では第4世代の後輪だけがタイヤとリムの 2 殻に
+ * 分かれているので、**隅ごとにまとめてから** 1 本の車輪として扱う。
+ */
+const WHEEL_RULE = {
+  /** 重心が車体の下半分にあること */
+  centerY: 0,
+  /** 重心の |z| が半車幅のこの割合より外にあること */
+  centerZ: 0.25,
+  /** 重心の |x| が半車長のこの割合より外にあること */
+  centerX: 0.15,
+  /**
+   * 変換元の空間で測った XY のアスペクト比の上限（＝丸いこと）。
+   * 実測ではタイヤが 1.02〜1.04、いちばん紛らわしい成分（第4世代の後端の
+   * 小さな殻）が 1.33 なので、1.2 で分かれる。
+   */
+  aspect: 1.2,
+  /**
+   * 車高に対する上下の大きさの下限（＝大きいこと）。
+   *
+   * **丸くて小さい殻が車体にはいくつもある。** 第4世代の鼻先には丸い導風口が
+   * 左右にあり、位置も形もタイヤの条件を満たしてしまう（実測 0.027 ＝ 車高の 6 %）。
+   * タイヤは 0.200〜0.242 ＝ 車高の 44〜53 % あるので、0.35 で確実に分かれる。
+   */
+  height: 0.35,
+  /** 車輪の半径が 4 本で揃っていること（相対差の上限） */
+  radiusSpread: 0.12,
+};
+
+/** 四隅の並び。**この順で焼く** — 記録の `axles` と 1 対 1 に対応する */
+const WHEEL_CORNERS = [
+  [-1, -1],
+  [-1, 1],
+  [1, -1],
+  [1, 1],
+];
+
+/**
+ * 四隅のタイヤを見つけ、車軸の中心と半径を実測する。
+ *
+ * 車軸は局所 Z に平行（車の前方は -X・上は +Y）。回転はこの軸まわりに掛ける。
+ */
+function findWheels(positions, indices, bounds, scales) {
+  const { label, count } = connectedComponents(positions, indices);
+  const parts = Array.from({ length: count }, () => ({
+    vertices: [],
+    min: [Infinity, Infinity, Infinity],
+    max: [-Infinity, -Infinity, -Infinity],
+  }));
+  for (let vertex = 0; vertex < positions.length / 3; vertex++) {
+    const part = parts[label[vertex]];
+    part.vertices.push(vertex);
+    for (let axis = 0; axis < 3; axis++) {
+      const value = positions[vertex * 3 + axis];
+      if (value < part.min[axis]) part.min[axis] = value;
+      if (value > part.max[axis]) part.max[axis] = value;
+    }
+  }
+
+  const halfLength = bounds.size[0] / 2;
+  const halfWidth = bounds.size[2] / 2;
+  const corners = new Map();
+  for (const part of parts) {
+    const center = [0, 1, 2].map((axis) => (part.min[axis] + part.max[axis]) / 2);
+    const size = [0, 1, 2].map((axis) => part.max[axis] - part.min[axis]);
+    if (center[1] >= WHEEL_RULE.centerY) continue;
+    if (Math.abs(center[2]) < WHEEL_RULE.centerZ * halfWidth) continue;
+    if (Math.abs(center[0]) < WHEEL_RULE.centerX * halfLength) continue;
+    // 車輪は横（Z）に薄い
+    if (size[2] >= size[0] || size[2] >= size[1]) continue;
+    if (size[1] < WHEEL_RULE.height * bounds.size[1]) continue;
+    // 正規化は前後だけ別倍率なので、**変換元の空間へ戻してから**丸さを見る
+    const aspect = (size[0] / scales.longitudinal) / (size[1] / scales.lateral);
+    if (aspect > WHEEL_RULE.aspect || aspect < 1 / WHEEL_RULE.aspect) continue;
+
+    const key = `${Math.sign(center[0])},${Math.sign(center[2])}`;
+    const corner = corners.get(key) ?? {
+      parts: [],
+      vertices: [],
+      min: [Infinity, Infinity, Infinity],
+      max: [-Infinity, -Infinity, -Infinity],
+    };
+    corner.parts.push(part);
+    corner.vertices.push(...part.vertices);
+    for (let axis = 0; axis < 3; axis++) {
+      corner.min[axis] = Math.min(corner.min[axis], part.min[axis]);
+      corner.max[axis] = Math.max(corner.max[axis], part.max[axis]);
+    }
+    corners.set(key, corner);
+  }
+
+  /**
+   * 車輪の**内側にすっぽり入っている小さな殻**を取り込む。
+   *
+   * 第4世代の車輪は中心にセンターキャップの殻を別に持っている（実測 9〜12 頂点・
+   * 車軸のちょうど真ん中）。大きさの条件では拾えないが、置き去りにすると
+   * **回るホイールの真ん中で 1 枚だけ止まった円盤**になる。逆に、はみ出す殻
+   * （サスペンションなど）は取り込まない — 完全に内側にあることを条件にする。
+   */
+  for (const part of parts) {
+    if ([...corners.values()].some((corner) => corner.parts.includes(part))) continue;
+    for (const corner of corners.values()) {
+      const inside = [0, 1, 2].every(
+        (axis) => part.min[axis] >= corner.min[axis] && part.max[axis] <= corner.max[axis],
+      );
+      if (!inside) continue;
+      corner.parts.push(part);
+      corner.vertices.push(...part.vertices);
+      break;
+    }
+  }
+
+  const wheels = WHEEL_CORNERS.map(([signX, signZ]) => {
+    const corner = corners.get(`${signX},${signZ}`);
+    if (!corner) throw new Error(`タイヤが見つからない隅: x${signX} z${signZ}`);
+    return {
+      vertices: corner.vertices,
+      // 車軸の中心。回転はこの点まわり（Z 軸に平行な軸）に掛かる
+      center: [0, 1, 2].map((axis) => (corner.min[axis] + corner.max[axis]) / 2),
+      /** 上下方向の半径。接地しているのはここなので、転がりの半径もこれで測る */
+      radius: (corner.max[1] - corner.min[1]) / 2,
+    };
+  });
+  if (corners.size !== 4) throw new Error(`四隅のタイヤが揃わない（${corners.size} 隅）`);
+
+  // 4 本の半径が揃っていること。揃わないなら車体の一部を拾っている
+  const radii = wheels.map((wheel) => wheel.radius);
+  const spread = (Math.max(...radii) - Math.min(...radii)) / Math.min(...radii);
+  if (spread > WHEEL_RULE.radiusSpread) {
+    throw new Error(`4 本の半径が揃わない（相対差 ${spread.toFixed(3)}）`);
+  }
+  // 車が載っているのはタイヤである。最下点がタイヤに無いなら選び損ねている
+  const lowest = Math.min(...wheels.map((wheel) => wheel.center[1] - wheel.radius));
+  if (Math.abs(lowest - bounds.min[1]) > 1e-6) {
+    throw new Error(`最下点がタイヤにない（${lowest} / ${bounds.min[1]}）`);
+  }
+
+  // 頂点 → 車輪番号（車体は -1）。三角形はこの表で振り分ける
+  const wheelOf = new Int32Array(positions.length / 3).fill(-1);
+  wheels.forEach((wheel, index) => {
+    for (const vertex of wheel.vertices) wheelOf[vertex] = index;
+  });
+  return { wheels, wheelOf };
+}
+
+/**
+ * 車輪を車軸まわりに `radians` だけ回す（位相を焼く）。
+ *
+ * **正規化で前後だけ 1.10 倍に伸びている**ので、そのまま回すと楕円が首を振る。
+ * 変換元の空間（伸ばす前 ＝ 車輪が丸い空間）へ戻して回し、また伸ばす。
+ * 円を回してから写した楕円は元の楕円と重なるので、**輪郭がほとんど動かない**。
+ *
+ * 8 位相ぶんの bounds のぶれ（モデル単位・実測）:
+ *
+ * | | そのまま回す | 変換元の空間で回す |
+ * | --- | --- | --- |
+ * | 第3世代 | 0.0160 | **0.0050** |
+ * | 第4世代 | 0.0239 | **0.0110** |
+ *
+ * 残っているぶれは**変換元のモデル自体が真円でない**ぶんで、正規化とは関係が無い。
+ * 法線は異方倍率の逆転置で往復させる。
+ */
+function rollWheel(positions, normals, wheel, radians, scales) {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const kLon = scales.longitudinal;
+  const kLat = scales.lateral;
+  for (const vertex of wheel.vertices) {
+    const base = vertex * 3;
+    const u = (positions[base] - wheel.center[0]) / kLon;
+    const v = (positions[base + 1] - wheel.center[1]) / kLat;
+    positions[base] = wheel.center[0] + (u * cos - v * sin) * kLon;
+    positions[base + 1] = wheel.center[1] + (u * sin + v * cos) * kLat;
+
+    const nu = normals[base] * kLon;
+    const nv = normals[base + 1] * kLat;
+    const x = (nu * cos - nv * sin) / kLon;
+    const y = (nu * sin + nv * cos) / kLat;
+    const z = normals[base + 2];
+    const length = Math.hypot(x, y, z);
+    if (length > 1e-12) {
+      normals[base] = x / length;
+      normals[base + 1] = y / length;
+      normals[base + 2] = z / length;
+    }
+  }
 }
 
 /**
@@ -200,7 +489,16 @@ function normalizeGeometry(positions, normals, normalize) {
  * accessors と bufferViews は**元の要素をそのまま持ち回り**、参照する番号だけを
  * 詰め直す。キーの並びが元の出力ツールごとに違う（Blender は `bufferView` が先、
  * meshy は `count` が先）ため、作り直すと JSON のバイト列が変わってしまう。
- * POSITION / NORMAL だけは中身を差し替えるので、min/max も書き直す。
+ * 中身と `count` は差し替えるので、min/max も書き直す。
+ *
+ * 出力は 1 台につき **1 + WHEEL_PHASES 個**になる（フェーズ 12-7）。
+ *
+ * - `car.glb` … 車体（タイヤを除く）
+ * - `car_wheels_<位相>.glb` … 四隅のタイヤだけを、車軸まわりに位相ぶん回したもの
+ *
+ * 分割は**可逆**である。車体とタイヤ（位相 0）を足すと元の三角形・頂点にちょうど
+ * 戻る（`car-conversion.spec.ts` が突き合わせる）ので、記録の `geometry` は
+ * 分割前の全体を指したままでよく、`CAR_MODELS.bounds` の意味も変わらない。
  */
 function convertCar(source, normalize) {
   const { json, binary } = source;
@@ -222,9 +520,99 @@ function convertCar(source, normalize) {
   // 記録の bounds と現物の頂点が最後の桁で食い違う
   const bounds = boundsOf(Float64Array.from(packedPositions));
 
+  const uvs = readAccessor(json, binary, primitive.attributes.TEXCOORD_0, 'VEC2');
+  const indices = readAccessor(json, binary, primitive.indices, 'SCALAR');
+
+  const { wheels, wheelOf } = findWheels(packedPositions, indices, bounds, scales);
+
+  // 三角形を車体とタイヤへ振り分ける。1 つの三角形が両方にまたがることは無い
+  // （タイヤは面を共有しない独立した殻なので）— またがったら選び方が壊れている
+  const bodyTriangles = [];
+  const wheelTriangles = [];
+  for (let triangle = 0; triangle < indices.length; triangle += 3) {
+    const owner = wheelOf[indices[triangle]];
+    for (let corner = 1; corner < 3; corner++) {
+      if (wheelOf[indices[triangle + corner]] !== owner) {
+        throw new Error('車体とタイヤにまたがる三角形がある');
+      }
+    }
+    (owner < 0 ? bodyTriangles : wheelTriangles).push(triangle);
+  }
+
+  const context = { json, mesh, primitive, positions: packedPositions, normals: packedNormals, uvs, indices };
+  const body = packSubset(context, bodyTriangles, packedPositions, packedNormals);
+  const phases = [];
+  for (let phase = 0; phase < WHEEL_PHASES; phase++) {
+    const rolled = Float32Array.from(packedPositions);
+    const rolledNormals = Float32Array.from(packedNormals);
+    const radians = (phase / WHEEL_PHASES) * Math.PI * 2;
+    for (const wheel of wheels) rollWheel(rolled, rolledNormals, wheel, radians, scales);
+    phases.push(packSubset(context, wheelTriangles, rolled, rolledNormals));
+  }
+
+  return {
+    glb: body.glb,
+    json: body.json,
+    body,
+    phases,
+    scales,
+    wheels: wheels.map((wheel) => ({
+      center: wheel.center.map((value) => Number(value)),
+      radius: wheel.radius,
+    })),
+    geometry: {
+      triangles: indices.length / 3,
+      vertices: packedPositions.length / 3,
+      bounds: { min: [...bounds.min], max: [...bounds.max], size: [...bounds.size] },
+    },
+  };
+}
+
+/**
+ * 三角形の部分集合を 1 つの GLB へ焼く。
+ *
+ * 頂点は**使われた順**に詰め直す（決定論のため。集合の反復順に頼らない）。
+ * インデックスの componentType は元のまま使うので、部分集合が 16 bit に
+ * 収まらなくなったらそこで落とす — 黙って壊れるより良い。
+ */
+function packSubset(context, triangles, positions, normals) {
+  const { json, mesh, primitive, uvs, indices } = context;
+
+  const remap = new Map();
+  const outPositions = [];
+  const outNormals = [];
+  const outUvs = [];
+  const outIndices = [];
+  for (const triangle of triangles) {
+    for (let corner = 0; corner < 3; corner++) {
+      const vertex = indices[triangle + corner];
+      let mapped = remap.get(vertex);
+      if (mapped === undefined) {
+        mapped = remap.size;
+        remap.set(vertex, mapped);
+        outPositions.push(positions[vertex * 3], positions[vertex * 3 + 1], positions[vertex * 3 + 2]);
+        outNormals.push(normals[vertex * 3], normals[vertex * 3 + 1], normals[vertex * 3 + 2]);
+        outUvs.push(uvs[vertex * 2], uvs[vertex * 2 + 1]);
+      }
+      outIndices.push(mapped);
+    }
+  }
+
+  const packedPositions = Float32Array.from(outPositions);
+  const packedNormals = Float32Array.from(outNormals);
+  const packedUvs = Float32Array.from(outUvs);
+  const IndexArray = COMPONENT_ARRAYS[json.accessors[primitive.indices].componentType];
+  if (remap.size > 2 ** (IndexArray.BYTES_PER_ELEMENT * 8)) {
+    throw new Error('インデックスの型に頂点数が収まらない');
+  }
+  const packedIndices = IndexArray.from(outIndices);
+  const bounds = boundsOf(Float64Array.from(packedPositions));
+
   const replacements = new Map([
-    [primitive.attributes.POSITION, { data: Buffer.from(packedPositions.buffer), bounds }],
-    [primitive.attributes.NORMAL, { data: Buffer.from(packedNormals.buffer), bounds: null }],
+    [primitive.attributes.POSITION, { data: Buffer.from(packedPositions.buffer), bounds, count: remap.size }],
+    [primitive.attributes.NORMAL, { data: Buffer.from(packedNormals.buffer), bounds: null, count: remap.size }],
+    [primitive.attributes.TEXCOORD_0, { data: Buffer.from(packedUvs.buffer), bounds: null, count: remap.size }],
+    [primitive.indices, { data: Buffer.from(packedIndices.buffer), bounds: null, count: packedIndices.length }],
   ]);
 
   // 残す accessor を「属性の順 → インデックス」で並べる
@@ -248,11 +636,12 @@ function convertCar(source, normalize) {
     if (accessor.sparse) throw new Error('スパースアクセサは非対応');
     const sourceView = json.bufferViews[accessor.bufferView];
     const replacement = replacements.get(sourceIndex);
-    const data = replacement ? replacement.data : sliceView(binary, sourceView);
+    const data = replacement.data;
     if (packedOffset % 4 !== 0) throw new Error('bufferView の詰め直しで 4 バイト境界を割った');
 
     const view = { ...sourceView, byteOffset: packedOffset, byteLength: data.length };
-    if (replacement?.bounds) {
+    accessor.count = replacement.count;
+    if (replacement.bounds) {
       accessor.min = [...replacement.bounds.min];
       accessor.max = [...replacement.bounds.max];
     }
@@ -282,7 +671,13 @@ function convertCar(source, normalize) {
     buffers: [{ byteLength: packed.length }],
   };
 
-  return { glb: writeGlb(converted, packed), json: converted, binary: packed, scales };
+  return {
+    glb: writeGlb(converted, packed),
+    json: converted,
+    triangles: packedIndices.length / 3,
+    vertices: remap.size,
+    bounds,
+  };
 }
 
 function normalizeNode(node) {
@@ -332,20 +727,9 @@ function convertTexture(source, dimensions) {
   return { png: encodePng(scaled.width, scaled.height, scaled.pixels), source: decoded };
 }
 
-function measureGeometry(json) {
-  const position = json.accessors[0];
-  const indices = json.accessors[3];
-  const min = position.min;
-  const max = position.max;
-  return {
-    triangles: indices.count / 3,
-    vertices: position.count,
-    bounds: {
-      min,
-      max,
-      size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]],
-    },
-  };
+/** 車輪 GLB の置き場所。車体と同じディレクトリに位相ぶん並べる */
+function wheelPathFor(modelPath, phase) {
+  return modelPath.replace(/car\.glb$/, `car_wheels_${phase}.glb`);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -370,13 +754,21 @@ for (const entry of record.records) {
 
   const source = readGlb(sourcePath);
   const converted = convertCar(source, entry.normalize);
-  const geometry = measureGeometry(converted.json);
+  const geometry = converted.geometry;
   const texture = convertTexture(source, entry.runtime.texture.dimensions);
+  const wheelPaths = converted.phases.map((_unused, phase) =>
+    wheelPathFor(entry.runtime.model.path, phase),
+  );
 
   const modelIdentical = Buffer.compare(converted.glb, readFileSync(modelPath)) === 0;
   const textureIdentical = Buffer.compare(texture.png, readFileSync(texturePath)) === 0;
   console.log(
-    `  runtime GLB ${converted.glb.length} B / ${geometry.triangles} tri / ${geometry.vertices} vtx`,
+    `  車体 GLB ${converted.glb.length} B / ${converted.body.triangles} tri / ${converted.body.vertices} vtx`,
+  );
+  console.log(
+    `  タイヤ GLB ${converted.phases[0].glb.length} B × ${WHEEL_PHASES} 位相 / ` +
+      `${converted.phases[0].triangles} tri / ${converted.phases[0].vertices} vtx / ` +
+      `半径 ${converted.wheels[0].radius.toFixed(6)}`,
   );
   console.log(
     `  正規化: 前後 ×${converted.scales.longitudinal.toFixed(4)} / ` +
@@ -391,6 +783,21 @@ for (const entry of record.records) {
   if (!modelIdentical) failures += 1;
   if (!textureIdentical) failures += 1;
 
+  // 車輪も 1 枚ずつ現物と突き合わせる（記録がまだ無いときは書き出しに任せる）
+  if (entry.runtime.wheels) {
+    if (entry.runtime.wheels.phases !== WHEEL_PHASES) {
+      console.error(`  位相の数が記録と違う: ${WHEEL_PHASES} / ${entry.runtime.wheels.phases}`);
+      failures += 1;
+    }
+    converted.phases.forEach((phase, index) => {
+      const path = join(repoRoot, wheelPaths[index]);
+      if (!existsSync(path) || Buffer.compare(phase.glb, readFileSync(path)) !== 0) {
+        console.error(`  現物と車輪 GLB が不一致: ${wheelPaths[index]}`);
+        failures += 1;
+      }
+    });
+  }
+
   // 二度目の変換が 1 度目と一致すること（決定論）
   const againSource = readGlb(sourcePath);
   const again = convertCar(againSource, entry.normalize);
@@ -398,9 +805,25 @@ for (const entry of record.records) {
     console.error('  2 回目の変換が 1 回目と一致しない（GLB）');
     failures += 1;
   }
+  for (let phase = 0; phase < WHEEL_PHASES; phase++) {
+    if (Buffer.compare(converted.phases[phase].glb, again.phases[phase].glb) !== 0) {
+      console.error(`  2 回目の変換が 1 回目と一致しない（車輪 ${phase}）`);
+      failures += 1;
+    }
+  }
   const againTexture = convertTexture(againSource, entry.runtime.texture.dimensions);
   if (Buffer.compare(texture.png, againTexture.png) !== 0) {
     console.error('  2 回目の変換が 1 回目と一致しない（テクスチャ）');
+    failures += 1;
+  }
+
+  // 分割は可逆。車体 ＋ タイヤ（位相 0）が分割前の全体に戻る
+  const splitTriangles = converted.body.triangles + converted.phases[0].triangles;
+  const splitVertices = converted.body.vertices + converted.phases[0].vertices;
+  if (splitTriangles !== geometry.triangles || splitVertices !== geometry.vertices) {
+    console.error(
+      `  分割で三角形か頂点が増減した: ${splitTriangles} tri / ${splitVertices} vtx`,
+    );
     failures += 1;
   }
 
@@ -423,11 +846,11 @@ for (const entry of record.records) {
     }
   }
 
-  rebuilt.push({ entry, converted, geometry, texture });
+  rebuilt.push({ entry, converted, geometry, texture, wheelPaths });
 }
 
 if (shouldWrite) {
-  for (const { entry, converted, geometry, texture } of rebuilt) {
+  for (const { entry, converted, geometry, texture, wheelPaths } of rebuilt) {
     const modelPath = join(repoRoot, entry.runtime.model.path);
     const texturePath = join(repoRoot, entry.runtime.texture.path);
     mkdirSync(dirname(modelPath), { recursive: true });
@@ -436,6 +859,22 @@ if (shouldWrite) {
     writeFileSync(modelPath, converted.glb);
     entry.runtime.model.sha256 = sha256(converted.glb);
     entry.runtime.model.bytes = converted.glb.length;
+    entry.runtime.model.triangles = converted.body.triangles;
+    entry.runtime.model.vertices = converted.body.vertices;
+
+    // 車輪。位相ぶんの成果物と、実測した車軸（`car-model.ts` が写す）を記録する
+    entry.runtime.wheels = {
+      phases: WHEEL_PHASES,
+      triangles: converted.phases[0].triangles,
+      vertices: converted.phases[0].vertices,
+      radius: converted.wheels[0].radius,
+      axles: converted.wheels.map((wheel) => wheel.center),
+      files: converted.phases.map((phase, index) => {
+        const path = join(repoRoot, wheelPaths[index]);
+        writeFileSync(path, phase.glb);
+        return { path: wheelPaths[index], sha256: sha256(phase.glb), bytes: phase.glb.length };
+      }),
+    };
 
     writeFileSync(texturePath, texture.png);
     entry.runtime.texture.sha256 = sha256(texture.png);
@@ -444,7 +883,9 @@ if (shouldWrite) {
     entry.geometry.triangles = geometry.triangles;
     entry.geometry.vertices = geometry.vertices;
     entry.geometry.bounds = geometry.bounds;
-    console.log(`  書き出し: ${entry.runtime.model.path} / ${entry.runtime.texture.path}`);
+    console.log(
+      `  書き出し: ${entry.runtime.model.path} / 車輪 ${WHEEL_PHASES} 枚 / ${entry.runtime.texture.path}`,
+    );
   }
   writeFileSync(recordPath, `${JSON.stringify(record, null, 2)}\n`);
   console.log('car-conversion.json を書き直した');

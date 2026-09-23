@@ -7,7 +7,13 @@ import {
 } from '@console-chaos/engine';
 
 import { BACKDROPS } from '../game/view/shared/backdrop.js';
-import { CAR_MODELS, carTextureFor } from '../game/view/shared/car-model.js';
+import {
+  CAR_LAMPS,
+  CAR_MODELS,
+  CAR_WHEELS,
+  carTextureFor,
+  carWheelAsset,
+} from '../game/view/shared/car-model.js';
 import {
   CAR_SPRITE_GEOMETRY,
   CAR_SPRITE_SOURCES,
@@ -44,6 +50,33 @@ const carTextures: RenderTextureAsset[] = GENERATION_IDS.flatMap((generation) =>
   if (!CAR_MODELS[generation]) return [];
   // メッシュが参照するテクスチャなので flipY: false（下の textures のコメントを参照）
   return [{ url: carTextureFor(generation), wrap: 'clamp' as const, flipY: false }];
+});
+
+/**
+ * 車のメッシュ（フェーズ 12-7）。1 台は**車体・車輪・灯火の 3 つ**でできている。
+ *
+ * 車輪は位相ぶん（`CAR_WHEELS.phases` 枚）並ぶので、ここも表から導く。
+ * 枚数を変えたときに manifest の書き換えを忘れる事故を構造的に無くす。
+ * `polygonSort` はコースと同じく**能力から決める** — 深度バッファの無い世代だけが
+ * 三角形単位の並べ替えを要る（第3世代の車体と車輪はマテリアル側でも有効にする）。
+ */
+const carModels: RenderModelAsset[] = GENERATION_IDS.flatMap((generation) => {
+  const model = CAR_MODELS[generation];
+  if (!model) return [];
+  const needsPolygonSort = !HARDWARE_GENERATION_PROFILES[generation].video.depthBuffer;
+  const sort = needsPolygonSort ? { polygonSort: true } : {};
+  const wheels = CAR_WHEELS[generation];
+  const lamps = CAR_LAMPS[generation];
+  return [
+    { url: model.asset, ...sort },
+    ...(wheels
+      ? Array.from({ length: wheels.phases }, (_unused, phase) => ({
+          url: carWheelAsset(generation, phase),
+          ...sort,
+        }))
+      : []),
+    ...(lamps ? [{ url: lamps.asset, ...sort }] : []),
+  ];
 });
 
 /**
@@ -229,8 +262,7 @@ export const MANIFEST: RenderAssetManifest = {
     ...cockpitAtlases,
   ],
   models: [
-    { url: 'assets/gen3/models/car.glb', polygonSort: true },
-    { url: 'assets/gen4/models/car.glb' },
+    ...carModels,
     ...trackModels,
     ...tunnelModels,
     // 生成物（tools/build-scenery-mesh.mjs・8-6）。置くのは第4世代だけ

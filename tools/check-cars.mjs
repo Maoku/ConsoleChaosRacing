@@ -52,6 +52,10 @@ for (const item of record.records) {
   console.log(`[${item.generation}]`);
   await verify(item.generation, item.source);
   await verify(item.generation, item.runtime.model);
+  // 車輪は位相ぶん（フェーズ 12-7）。1 枚でも欠けると車が空中を滑る
+  for (const file of item.runtime.wheels?.files ?? []) {
+    await verify(item.generation, file);
+  }
   await verify(item.generation, item.runtime.texture);
 }
 

@@ -11,7 +11,7 @@ FC / SFC / PS1 / PS2 の 4 世代表現を 1 つのシミュレーションの�
 Claude Code / Opus5 で作成したもの。
 車については
 - 画像は GPT-Image-2
-- 3Dモデルは MeshyAI
+- 3Dモデルは Tripo3D P2.0 (旧モデルは Meshy)
 を使って別途用意しています
 
 - 要求仕様: [`Docs/PLAN.md`](Docs/PLAN.md)
@@ -102,7 +102,8 @@ npm run dev
 | `npm test` | Vitest（純ロジックのテスト） |
 | `npm run typecheck` | 型チェックのみ |
 | `npm run check:cars` | 変換済み車アセットの SHA-256 照合（※変換元 GLB は公開リポジトリに含まれないため、クローンした状態では変換元の照合が失敗する。[data/README.md](data/README.md) 参照） |
-| `npm run prepare:cars` | 変換元 GLB から車の runtime GLB と base color テクスチャを焼き直す（`-- --write` で書き出し。姿勢・原点・寸法の正規化を焼き込む。※変換元が要る） |
+| `npm run prepare:cars` | 変換元 GLB から車の runtime GLB と base color テクスチャを焼き直す（`-- --write` で書き出し。姿勢・原点・寸法の正規化を焼き込み、**タイヤを車体から切り離して回転位相を 8 枚焼く**。※変換元が要る） |
+| `npm run build:lamps` | 車体 GLB と塗装テクスチャからテールランプのメッシュを焼く |
 | `npm run measure:pace` | 敵車の速度スケールとペース較正を実測（下記） |
 | `npm run build:minimap` | コース中心線からミニマップ PNG とマーカーを生成 |
 | `npm run build:assets` | 生成系アセットをまとめて再生成 |

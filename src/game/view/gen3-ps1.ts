@@ -6,7 +6,16 @@ import type {
 } from '@console-chaos/engine';
 
 import type { ViewContext } from './context.js';
-import { carModelFor, carTextureFor, carTransform } from './shared/car-model.js';
+import {
+  CAR_LAMP_COLORS,
+  carLampsFor,
+  carLampsVisible,
+  carModelFor,
+  carTextureFor,
+  carTransform,
+  carWheelAsset,
+  carWheelPhase,
+} from './shared/car-model.js';
 import { hidesPlayerCar, resolveCameraView, viewCamera } from './shared/camera.js';
 import { pushHud } from './shared/hud.js';
 import { defaultMinimapRect, pushMinimap } from './shared/minimap.js';
@@ -24,7 +33,7 @@ import {
   tunnelTexture,
   tunnelVisible,
 } from './shared/tunnel.js';
-import { ENTRANT_COLORS, PLAYER_ENTRANT } from './shared/variants.js';
+import { ENTRANT_COLORS, PLAYER_ENTRANT, mixColor } from './shared/variants.js';
 
 /**
  * 第3世代（PS1）— 深度バッファの無い 3D（実装計画 §3.4）。
@@ -74,6 +83,13 @@ const TUNNEL_LAMP_UNLIT = { ambient: 1.4, diffuse: 0 } as const;
 
 /** トンネルを積み始める距離 [m]。フォグが閉じる範囲に合わせる */
 const TUNNEL_DRAW_DISTANCE = 140;
+
+/**
+ * テールランプのマテリアル（12-7）。トンネルの灯具と同じ作り方で、
+ * `ambient` を 1 より大きく採って環境光に関係なく明るく残す（`diffuse` は 0）。
+ * 引くテクセルは塗装テクスチャの明るい無彩色 1 点なので、色は乗算だけで決まる。
+ */
+const LAMP_UNLIT = { ambient: 1.4, diffuse: 0 } as const;
 
 export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
   const { generation, profile, state, display } = context;
@@ -177,6 +193,17 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
   };
   frame.materials.push(carMaterial);
 
+  // 灯火（12-7）。板 2 枚だけなので三角形の並べ替えは要らない
+  const lampMaterial: MaterialCommand = {
+    id: `car-lamp-${generation}`,
+    baseColorTexture: carTextureFor(generation),
+    uvMode: 'affine',
+    ...LAMP_UNLIT,
+    generations: [generation],
+  };
+  const lamps = carLampsFor(generation);
+  if (lamps) frame.materials.push(lampMaterial);
+
   // 同じスロットの中では登録順が保たれる。遠い車から積んで、近い車を後に描く
   const hidePlayer = hidesPlayerCar(view);
   const camera = frame.camera.position;
@@ -188,11 +215,29 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
     // 車内からの視点では自機を積まない。運転席から自分の車体は見えない
     if (hidePlayer && car.entrant === PLAYER_ENTRANT) continue;
     const groundY = track.toWorld(car.s, car.lateral)[1];
+    const transform = carTransform(track, car, generation);
+
+    // ── 車輪を**車体より先に**積む（12-7）。三角形の並べ替えはメッシュの中だけなので、
+    // 同じスロットに入った 2 つのメッシュの前後は積んだ順で決まる。先に車輪を置けば
+    // 車体が後から上書きし、向こう側の車輪とフェンダーに隠れる部分がちょうど消える。
+    // 逆順にすると**車体を透かして反対側の車輪が見える**
+    frame.meshes.push({
+      id: `car-wheels-${generation}-${car.entrant}`,
+      geometry: TRACK_GEOMETRY,
+      asset: carWheelAsset(generation, carWheelPhase(generation, car.s)),
+      transform,
+      // 車体色を掛けない。塗装テクスチャは無彩色なので、白のままがゴムと金属の色になる
+      color: '#ffffff',
+      material: carMaterial.id,
+      orderTableIndex: CAR_SLOT,
+      generations: [generation],
+    } satisfies MeshCommand);
+
     frame.meshes.push({
       id: `car-${generation}-${car.entrant}`,
       geometry: TRACK_GEOMETRY,
       asset: carModel.asset,
-      transform: carTransform(track, car, generation),
+      transform,
       color: ENTRANT_COLORS[car.entrant % ENTRANT_COLORS.length] ?? '#ffffff',
       material: carMaterial.id,
       orderTableIndex: CAR_SLOT,
@@ -200,6 +245,21 @@ export function buildGen3View(frame: RenderFrame, context: ViewContext): void {
       groundY,
       generations: [generation],
     } satisfies MeshCommand);
+
+    // ── テールランプ（12-7）。車体の後に積んで上から重ねる。板は後ろを向いた
+    // 一枚面なので、前から見た車では背面カリングで消える
+    if (lamps && carLampsVisible(track, car, camera)) {
+      frame.meshes.push({
+        id: `car-lamp-${generation}-${car.entrant}`,
+        geometry: TRACK_GEOMETRY,
+        asset: lamps.asset,
+        transform,
+        color: mixColor(CAR_LAMP_COLORS.idle, CAR_LAMP_COLORS.brake, car.brakeInput),
+        material: lampMaterial.id,
+        orderTableIndex: CAR_SLOT,
+        generations: [generation],
+      } satisfies MeshCommand);
+    }
   }
 
   // ── 木（8-6）。**車と同じスロット 9 へ入れる。**

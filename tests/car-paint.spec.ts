@@ -124,7 +124,8 @@ describe('車体の塗装', () => {
 
   it('ビューは 1 枚のテクスチャを共有し、色だけを台ごとに変える', () => {
     const frame = buildFrame('PS1', raceAfter(1500));
-    const carMeshes = frame.meshes.filter((mesh) => mesh.id.startsWith('car-'));
+    // 1 台は車体・車輪・灯火の 3 つでできている（12-7）。ここが見るのは車体
+    const carMeshes = frame.meshes.filter((mesh) => mesh.id.startsWith('car-PS1-'));
     expect(carMeshes).toHaveLength(ENTRANT_COUNT);
 
     // マテリアルは 1 つ。テクスチャを 8 枚焼く必要が無いのがこの方式の要点
@@ -137,6 +138,20 @@ describe('車体の塗装', () => {
       expect(ENTRANT_COLORS).toContain(color);
       // 白のままだと全車が同じ見た目になる
       expect(color).not.toBe('#ffffff');
+    }
+  });
+
+  it('車輪は同じマテリアルを共有するが、車体色では染めない', () => {
+    // 車輪を車体から切り離した見返り（12-7）。塗装テクスチャは無彩色なので、
+    // 乗算を白のままにすればゴムと金属の色がそのまま出る。
+    // **テクスチャもマテリアルも増えない** — 変わるのは乗算する色 1 つだけである
+    const frame = buildFrame('PS1', raceAfter(1500));
+    const bodies = frame.meshes.filter((mesh) => mesh.id.startsWith('car-PS1-'));
+    const wheels = frame.meshes.filter((mesh) => mesh.id.startsWith('car-wheels-PS1-'));
+    expect(wheels).toHaveLength(ENTRANT_COUNT);
+    for (const wheel of wheels) {
+      expect(wheel.material).toBe(bodies[0]!.material);
+      expect(wheel.color).toBe('#ffffff');
     }
   });
 
