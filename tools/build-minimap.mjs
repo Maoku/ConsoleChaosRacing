@@ -84,8 +84,8 @@ function drawMinimap(generation) {
     plot(x, y, Math.max(1, layout.lineWidth - 1), layout.lineColor, 1);
   }
 
-  // アトラスは flipY:false で取り込まれるので、画面座標系で描いた図を上下反転して渡す
-  return { layout, png: raster.flipVertical().toPng() };
+  // 線とマーカーが同じY-down座標を使う。Engineが画像上端を画面上端へ貼る。
+  return { layout, png: raster.toPng() };
 }
 
 /**

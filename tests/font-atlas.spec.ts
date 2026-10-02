@@ -9,10 +9,8 @@ import { decodePng } from '../tools/lib/png.mjs';
 /**
  * 生成した HUD フォントとタイトルロゴの向きと形を固定する（実装計画 §3.5 / §3.7）。
  *
- * **上下の向きが最も間違えやすい。** レンダラーはアトラスを `flipY: false` で取り込み、
- * スクリーン空間スプライトのクアッドは**画像の上端をスプライトの下端へ**割り当てる。
- * つまり字形はセルの中で上下反転して焼くのが正しく、素直に置くと文字が逆さまに出る。
- * 例外にはならないので、画面を見るまで気付けない（車スプライトと同じ事情）。
+ * EngineはscreenSpaceのY-down投影を補正し、画像上端を画面上端へ貼る。
+ * 字形を画像座標のまま検査し、生成側とテスト側で同じ反転を相殺しない。
  *
  * あわせて**半端な α を 1 画素も作らない**ことを固定する。FC は `translucency: none` で、
  * スプライト面が `a ≥ 0.5` のしきい値で合成されるため、中間の α は世代によって
@@ -31,8 +29,7 @@ const font = load(FONT_ATLAS.url);
 function alphaAt(charCode: number, glyphX: number, glyphY: number): number {
   const index = fontCell(charCode)!;
   const x = (index % columns) * cell + glyphX;
-  // 焼くときにセルの中で上下反転しているので、読むときも同じ変換で戻す
-  const y = Math.floor(index / columns) * cell + (cell - 1 - glyphY);
+  const y = Math.floor(index / columns) * cell + glyphY;
   return font.pixels[(y * font.width + x) * 4 + 3]!;
 }
 
@@ -160,7 +157,7 @@ describe('タイトルロゴ', () => {
   it('絵が縦方向に偏っていない（上下反転して焼かれた形跡の検出）', () => {
     // ロゴは上に小さな行・下に大きな行という構図なので、
     // **下半分のほうが点灯画素が多い**。逆さまに焼くとこれが反転する。
-    // 画像は flipY:false 前提で反転済みなので、画像上での上半分が画面での下半分にあたる
+    // 補正済みEngineでは画像の上下と画面の上下が一致する。
     const half = logo.height / 2;
     let imageTop = 0;
     let imageBottom = 0;
@@ -171,6 +168,6 @@ describe('タイトルロゴ', () => {
         else imageBottom += 1;
       }
     }
-    expect(imageTop).toBeGreaterThan(imageBottom);
+    expect(imageBottom).toBeGreaterThan(imageTop);
   });
 });

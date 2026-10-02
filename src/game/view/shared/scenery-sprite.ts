@@ -103,11 +103,8 @@ export interface ScenerySpriteAtlas {
   /**
    * セルの中で**上下を反転して焼く**か（生成ツールだけが使う）。
    *
-   * スクリーン空間スプライトと**ワールド空間のビルボードで向きの要求が逆**になる
-   * （実画面で確認）。スクリーン空間のクアッドは `ortho(0, W, H, 0)` を通るので
-   * 画像の上端がスプライトの下端へ割り当たり、絵を反転して焼くのが正しい
-   * （車スプライト・フォントと同じ規約）。ワールド空間ではその反転が無いので、
-   * 同じ絵を使うと**木が逆さまに立つ**。焼き方をここで分ける。
+   * EngineのscreenSpace補正により、スクリーン空間とワールド空間の両方が
+   * 正立画像を使う。現在は全世代false。旧素材向けの反転を再導入しないこと。
    */
   readonly flipCells: boolean;
   readonly color: string;
@@ -123,8 +120,8 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
       // 走査線あたり 8 スプライトしか出せないので、種類を看板 1 つに絞る
       kinds: ['sign'],
       drawDistance: 90,
-      // スクリーン空間スプライトなので反転して焼く
-      flipCells: true,
+      // 補正済みscreenSpace規約なので正立のまま焼く
+      flipCells: false,
       color: '#ffffff',
     },
     SFC: {
@@ -134,7 +131,7 @@ export const SCENERY_SPRITES: GenerationVariant<ScenerySpriteAtlas | null> =
       // 32 スプライト/走査線なので木とタイヤフェンスまで置ける
       kinds: ['sign', 'tree', 'tyres'],
       drawDistance: 150,
-      flipCells: true,
+      flipCells: false,
       color: '#ffffff',
     },
     PS1: null,

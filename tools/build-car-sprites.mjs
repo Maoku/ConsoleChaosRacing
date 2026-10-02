@@ -129,12 +129,9 @@ function reshapeBand(image, runs, layout, band) {
     for (let y = 0; y < artHeight; y++) {
       for (let x = 0; x < artWidth; x++) {
         const from = ((top + y) * image.width + left + x) * 4;
-        // **セルの中で上下を入れ替えて書く。** レンダラーはアトラスを flipY: false で
-        // 取り込み、スクリーン空間スプライトのクアッドは画像の上端を下端へ割り当てる
-        // （render/geometry の cell UV と screenSpace の ortho の組み合わせ）。
-        // 素直に置くと車が逆さまに描かれる。反転するのはセルの中だけで、
-        // 行の並びはそのまま保つ
-        const destRow = cell - 1 - destTop - y;
+        // Engineの補正済みscreenSpace規約では画像上端が画面上端になる。
+        // 車体を正立させ、セル順序と接地線を保つ。
+        const destRow = destTop + y;
         const to = (destRow * width + destLeft + x) * 4;
         image.pixels.copy(pixels, to, from, from + 4);
       }

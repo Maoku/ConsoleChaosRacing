@@ -15,13 +15,8 @@ import { decodePng } from '../tools/lib/png.mjs';
 /**
  * 整形済みアトラスの向きと配置を固定する（実装計画 §3.2）。
  *
- * **上下の向きが最も間違えやすい。** レンダラーはアトラスを `flipY: false` で取り込み、
- * スクリーン空間スプライトのクアッドは**画像の上端をスプライトの下端へ**割り当てる
- * （`render/geometry` のセル UV と、`screenSpace` の `ortho(0, W, H, 0)` の組み合わせ）。
- * つまりアトラスは**上下を反転して焼く**のが正しく、素直に置くと車が逆さまに描かれる。
- * これは例外にならず、テクスチャが読めていないわけでもないので、画面を見るまで気付けない。
- *
- * ミニマップの俯瞰図（`build-minimap.mjs`）が `flipVertical()` しているのと同じ理由。
+ * EngineのscreenSpace補正に合わせ、画像上端が画面上端になる。
+ * 画像を反転して読み戻さず、接地線がセル下側にあることを固定する。
  */
 
 const THRESHOLDS = STEER_FRAME.FC;
@@ -126,26 +121,24 @@ describe('車スプライトのアトラス', () => {
         expect(atlas.image.height).toBe(cell * rows);
       });
 
-      it('絵が上下反転して置かれている（描画時に正立する）', () => {
+      it('車体が正立し、接地線がセルの下側にある', () => {
         for (let row = 0; row < rows; row++) {
           for (let column = 0; column < columns; column++) {
             const [first, last] = atlas.extent(column, row);
             expect(first, `セル(${column}, ${row})が空`).toBeGreaterThanOrEqual(0);
-            // 反転して置いてあるので、接地線は**画像の上側**に来る。
-            // 反転を忘れると絵が下側（cell - GROUND_ROW より下）へ寄る
-            expect(first, `セル(${column}, ${row})の接地線`).toBe(cell - GROUND_ROW);
-            expect(last).toBeLessThan(cell - GROUND_ROW + heightFraction * cell);
+            expect(last, `セル(${column}, ${row})の接地線`).toBe(GROUND_ROW - 1);
+            expect(first).toBeGreaterThan(GROUND_ROW - 1 - heightFraction * cell);
           }
         }
       });
 
       it('3 列とも接地線が揃っている（傾けても車が浮き沈みしない）', () => {
         // 元絵は車ごとに 1 px ずれていることがある（第2世代の正面がそう）。
-        // 高さは揃わなくてよいが、接地線＝反転後の上端は必ず一致すること
+        // 高さは揃わなくてよいが、接地線＝画像の下端は必ず一致すること
         for (let row = 0; row < rows; row++) {
           const grounds = Array.from(
             { length: columns },
-            (_unused, column) => atlas.extent(column, row)[0],
+            (_unused, column) => atlas.extent(column, row)[1],
           );
           for (const ground of grounds) expect(ground).toBe(grounds[0]);
         }

@@ -15,10 +15,8 @@
  * 中間の α があると縁が世代やしきい値で変わる（フォントとロゴと同じ規約）。
  * そのぶん縁はギザつくが、640×448 では気にならない。
  *
- * 上下反転はしない — 内装もステアリングも**上下対称ではない**が、
- * レンダラーはアトラスを `flipY: false` で取り込み、スクリーン空間スプライトの
- * クアッドは画像の上端をスプライトの下端へ割り当てる。したがって
- * 「画面で見えるとおりの絵」を描いてから最後に 1 度だけ反転する。
+ * Engineの補正済みscreenSpace規約へ、画面で見えるとおりの向きで渡す。
+ * ルーフは上、ダッシュボードと下向きスポークは下に置く。
  *
  * 生成物はリポジトリにコミットする。二度実行してバイト一致すること（決定論）が要件。
  */
@@ -143,9 +141,9 @@ function write(relativePath, buffer) {
 }
 
 const interior = drawInterior(COCKPIT_ATLAS.width, COCKPIT_ATLAS.height);
-write(`public/${COCKPIT_ATLAS.url}`, interior.flipVertical().toPng());
+write(`public/${COCKPIT_ATLAS.url}`, interior.toPng());
 
 const wheel = drawWheel(WHEEL_ATLAS.size);
-write(`public/${WHEEL_ATLAS.url}`, wheel.flipVertical().toPng());
+write(`public/${WHEEL_ATLAS.url}`, wheel.toPng());
 
 console.log('内装生成 完了');

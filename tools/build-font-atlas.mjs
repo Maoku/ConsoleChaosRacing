@@ -65,11 +65,9 @@ for (let index = 0; index < columns * rows; index++) {
   }
 
   forEachGlyphPixel(charCode, (glyphX, glyphY) => {
-    // **セルの中で上下を入れ替えて書く。** レンダラーはアトラスを flipY: false で
-    // 取り込み、スクリーン空間スプライトのクアッドは画像の上端をスプライトの下端へ
-    // 割り当てる。素直に置くと文字が逆さまに描かれる。反転するのはセルの中だけで、
-    // セルの並び（＝文字コードの順）はそのまま保つ（`build-car-sprites.mjs` と同じ）
-    put(glyphX, cell - 1 - glyphY);
+    // EngineがscreenSpaceのY-down投影を補正するので、画像の上端は画面の上端。
+    // セルの順序を保ち、字形を左上からそのまま描く。
+    put(glyphX, glyphY);
   });
 
   if (inked > 0) inkedCells += 1;

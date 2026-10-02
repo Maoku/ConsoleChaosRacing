@@ -118,12 +118,8 @@ describe('背景オブジェクト', () => {
   });
 
   /**
-   * 焼いた絵の向き。**スクリーン空間とワールド空間で要求が逆**になる。
-   *
-   * スクリーン空間スプライトのクアッドは `ortho(0, W, H, 0)` を通るので画像の上端が
-   * スプライトの下端へ割り当たり、絵を上下反転して焼くのが正しい（車・フォントと同じ）。
-   * ワールド空間のビルボードにはその反転が無く、同じ絵を貼ると**木が逆さまに立つ**
-   * — 実画面で起きた。例外にならないので、ここで向きを固定する。
+   * EngineのscreenSpace補正後は全世代が正立画像を使う。
+   * 画像の上下帯の色で幹が下にあることを検査する。
    */
   describe('焼いた絵の向き', () => {
     /**
@@ -157,12 +153,12 @@ describe('背景オブジェクト', () => {
       return top > 0;
     }
 
-    it('擬似3D 世代は上下反転して焼いてある', () => {
+    it('擬似3D 世代も葉が上・幹が下に焼いてある', () => {
       for (const generation of ['FC', 'SFC'] as const) {
         const atlas = scenerySpriteAtlasFor(generation)!;
-        expect(atlas.flipCells).toBe(true);
+        expect(atlas.flipCells).toBe(false);
         for (const cell of atlas.layout.cells.tree) {
-          expect(trunkAtImageTop(atlas, cell), `${generation} セル ${cell}`).toBe(true);
+          expect(trunkAtImageTop(atlas, cell), `${generation} セル ${cell}`).toBe(false);
         }
       }
     });

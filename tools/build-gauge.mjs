@@ -12,9 +12,8 @@
  * 出力は 2 列 × 2 行のアトラス（第3世代 128² / 第4世代 256²）。
  * セルは 0: 盤・1: 針・2: 中央の丸で、4 つ目は空けてある。
  *
- * **各セルは中で上下を反転して焼く。** レンダラーはアトラスを `flipY: false` で
- * 取り込み、スクリーン空間スプライトのクアッドは画像の上端をスプライトの下端へ
- * 割り当てるため（`build-font-atlas.mjs` と同じ理由）。セルの並びは保つ。
+ * 各セルは画面と同じ上端原点で焼く。EngineのscreenSpace補正に合わせ、
+ * 針の上向きと目盛りの角度をそのまま保つ。セルの並びは変えない。
  *
  * 生成物はリポジトリにコミットする。二度実行してバイト一致すること（決定論）が要件。
  */
@@ -132,11 +131,11 @@ function drawHub(size, colors) {
   return raster;
 }
 
-/** セルのラスタをアトラスへ貼る。**セルの中だけを上下反転する** */
-function blitFlipped(atlas, cellRaster, column, row, size) {
+/** セルのラスタを向きとセル順序を保ってアトラスへ貼る。 */
+function blit(atlas, cellRaster, column, row, size) {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const from = ((size - 1 - y) * size + x) * 4;
+      const from = (y * size + x) * 4;
       const to = ((row * size + y) * atlas.width + column * size + x) * 4;
       for (let channel = 0; channel < 4; channel++) {
         atlas.pixels[to + channel] = cellRaster.pixels[from + channel];
@@ -165,7 +164,7 @@ for (const generation of GENERATION_IDS) {
     [TACHO_ATLAS.cells.hub, drawHub(size, layout.colors)],
   ];
   for (const [cell, raster] of cells) {
-    blitFlipped(atlas, raster, cell % TACHO_ATLAS.columns, Math.floor(cell / TACHO_ATLAS.columns), size);
+    blit(atlas, raster, cell % TACHO_ATLAS.columns, Math.floor(cell / TACHO_ATLAS.columns), size);
   }
 
   const png = encodePng(atlas.width, atlas.height, atlas.pixels);

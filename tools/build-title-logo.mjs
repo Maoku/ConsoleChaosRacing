@@ -161,9 +161,8 @@ for (const line of LINES) {
 const relativePath = `public/${LOGO_ATLAS.url}`;
 const absolute = join(repoRoot, relativePath);
 mkdirSync(dirname(absolute), { recursive: true });
-// アトラスは flipY:false で取り込まれるので、画面座標系で描いた図を上下反転して渡す。
-// ロゴは 1 セルなので画像ぜんたいを反転すればよい（`build-minimap.mjs` と同じ）
-const png = raster.flipVertical().toPng();
+// 補正済みscreenSpace規約に合わせ、画面と同じ上端原点の画像を渡す。
+const png = raster.toPng();
 writeFileSync(absolute, png);
 
 console.log(`${relativePath} ${WIDTH}×${HEIGHT} / ${colors.size} 色 / ${png.length} B`);

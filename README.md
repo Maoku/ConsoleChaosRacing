@@ -30,6 +30,10 @@ npm run dev -- --host 0.0.0.0 --port 5174
 右下の「音声設定」で通常音源／拡張音源を選びます。拡張音源は第1世代のみ有効です。BGM・効果音音量・ミュートも保存します。
 仕様・精度・曲構成は [FDS音源実装メモ](Docs/FDS_AUDIO.md) を参照してください。
 
+FDS同梱Engineのスプライト規約に合わせ、素材は画像上端を画面上端として生成します。
+旧版で使っていた事前の上下反転は不要です。修正範囲と回帰検証は
+[スプライトの向き](Docs/SPRITE_ORIENTATION.md) を参照してください。
+
 エンジンを再生成する場合は、隣のConsoleChaosEngineの **gen1-fds** ブランチで `npm run pack:distribution` を実行し、
 `artifacts/console-chaos-engine-0.2.0.tgz` を上記 `-fds.tgz` 名でコピーして、
 `npm install ./reference/console-chaos-engine-0.2.0-fds.tgz` でlockfileと依存を更新します。

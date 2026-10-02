@@ -165,12 +165,20 @@ describe('第2世代のパレット替え', () => {
     expect(image.height).toBe(fc.cell * fc.rows);
   });
 
-  it('二度焼いてもバイト一致する（決定論）', () => {
-    const before = CAR_SPRITE_SOURCES.map((source) => readFileSync(join(publicRoot, source.to)));
-    execFileSync('npx', ['tsx', 'tools/build-car-sprites.mjs'], { cwd: process.cwd() });
-    const after = CAR_SPRITE_SOURCES.map((source) => readFileSync(join(publicRoot, source.to)));
-    for (const [index, source] of CAR_SPRITE_SOURCES.entries()) {
-      expect(after[index]!.equals(before[index]!), `${source.to} が焼き直しで変わった`).toBe(true);
+  it('保存素材と二度の再生成が同じ寸法・RGBA画素になる（圧縮環境に依存しない決定論）', () => {
+    const readImages = () => CAR_SPRITE_SOURCES.map((source) =>
+      decodePng(readFileSync(join(publicRoot, source.to))),
+    );
+    const before = readImages();
+    for (let run = 0; run < 2; run++) {
+      execFileSync('npx', ['tsx', 'tools/build-car-sprites.mjs'], { cwd: process.cwd() });
+      const after = readImages();
+      for (const [index, source] of CAR_SPRITE_SOURCES.entries()) {
+        expect(after[index]!.width, source.to).toBe(before[index]!.width);
+        expect(after[index]!.height, source.to).toBe(before[index]!.height);
+        // zlibのバージョンで圧縮バイトは変わるため、全RGBA画素を比較する。
+        expect(after[index]!.pixels.equals(before[index]!.pixels), `${source.to} の画素が再生成${run + 1}回目で変化`).toBe(true);
+      }
     }
   }, 60_000);
 
