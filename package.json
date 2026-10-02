@@ -36,7 +36,7 @@
     "build:assets": "npm run build:minimap && npm run build:track && npm run build:paint && npm run build:lamps && npm run build:road && npm run build:road-map && npm run build:backdrop && npm run build:sprites && npm run build:scenery && npm run build:scenery-mesh && npm run build:tunnel && npm run build:skyline && npm run build:font && npm run build:logo && npm run build:gauge && npm run build:cockpit"
   },
   "dependencies": {
-    "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0.tgz"
+    "@console-chaos/engine": "file:reference/console-chaos-engine-0.2.0-fds.tgz"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

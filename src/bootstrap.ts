@@ -1,3 +1,4 @@
+import { installAudioOptions } from './game/audio/options.js';
 import {
   createAssetManager,
   createBrowserLoopHost,
@@ -110,6 +111,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     audioUnlock = installAudioUnlock(document, () => audio!.unlock());
   }
 
+  const disposeAudioOptions = audio ? installAudioOptions(audio, 'chaos.racing.audio.v1') : () => {};
   const host = createGameHost({
     loopHost: createBrowserLoopHost(),
     renderer,
@@ -129,6 +131,7 @@ export async function boot(options: BootOptions): Promise<BootResult> {
     dispose() {
       if (disposed) return;
       disposed = true;
+      disposeAudioOptions();
       audioUnlock?.dispose();
       resizeObserver.dispose();
       // host.dispose() が renderer / assets / audio / input をまとめて破棄する。

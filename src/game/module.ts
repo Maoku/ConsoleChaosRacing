@@ -131,6 +131,7 @@ export function createRacingModule(options: RacingModuleOptions = {}): GameModul
           // 音はシムの後。エンジン音は自機の状態から、効果音は立ち上がりから決まる。
           // どちらも `AudioContext` の時計で先読みするので、描画が落ちても乱れない。
           // ポーズ中とリザルト中はスロットルを 0 として扱い、エンジン音を落ち着かせる
+          context.audio.setPaused?.(flow.paused);
           const player = flow.race.cars[PLAYER_ENTRANT]!;
           const driving = acceptsDriving(flow.screen) && !flow.paused;
           engineSound.update(context.audio, context.generation.profile, {

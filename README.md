@@ -18,78 +18,22 @@ Claude Code / Opus5 で作成したもの。
 - 実装計画: [`Docs/IMPLEMENTATION_PLAN.md`](Docs/IMPLEMENTATION_PLAN.md)
 
 
-## セットアップ
+## セットアップ（gen1-fds 作業ブランチ）
 
-### 1. エンジンをクローンしてビルドする
+Node.js 22以上。検証済みエンジンは `reference/console-chaos-engine-0.2.0-fds.tgz` に同梱し、lockfileで固定しています。
 
-```bash
-git clone https://github.com/Maoku/ConsoleChaosEngine.git
-cd ConsoleChaosEngine
-npm install
-npm run pack:distribution
+```sh
+npm ci --cache /tmp/npm-cache
+npm run dev -- --host 0.0.0.0 --port 5174
 ```
 
-- Node.js 22 以上が必要（エンジン側 `package.json` の `engines`）。
-- `pack:distribution` は engine / engine-testkit / asset-pipeline の 3 パッケージをビルドし、
-  `artifacts/` に tarball と `SHA256SUMS` を書き出す。本リポジトリが使うのは engine 本体
-  （`artifacts/console-chaos-engine-0.2.0.tgz`）だけで、残り 2 つは不要。
-- consumer 境界まで確かめたいときは代わりに `npm run verify:distribution` を使う。tarball を
-  一時プロジェクトへオフラインインストールし、公開 API の import と型検査まで通す（その分遅い）。
+右下の「音声設定」で通常音源／拡張音源を選びます。拡張音源は第1世代のみ有効です。BGM・効果音音量・ミュートも保存します。
+仕様・精度・曲構成は [FDS音源実装メモ](Docs/FDS_AUDIO.md) を参照してください。
 
-### 2. エンジン tarball を配置する
-
-ビルドした tarball を、本リポジトリの `reference/` 直下へ `console-chaos-engine-0.2.0.tgz`
-という名前のまま置く（`package.json` の `file:` 参照がこの名前を指している）。本リポジトリの
-ルートで、エンジンを隣に置いた場合:
-
-```bash
-cp ../ConsoleChaosEngine/artifacts/console-chaos-engine-0.2.0.tgz reference/
-```
-
-| 項目 | 値 |
-| --- | --- |
-| パッケージ | `@console-chaos/engine@0.2.0` |
-| 生成元 | `ConsoleChaosEngine` の `npm run pack:distribution`（`artifacts/console-chaos-engine-0.2.0.tgz`） |
-| SHA-256 | `e6b5b57c1a55179cccc3f1d690c1c481d418708f796039023dd6f4203b726d74` |
-
-```bash
-shasum -a 256 reference/console-chaos-engine-0.2.0.tgz
-```
-
-過去のバージョン:
-
-| バージョン | SHA-256 |
-| --- | --- |
-| 0.1.0 | `0871693e0e662fab0652970d7e54dc10acd84ec4ce2a91000973ba44d41b1786` |
-
-**この SHA-256 は「本リポジトリが動作確認に使った現物」の指紋であって、自分でビルドした
-tarball の期待値ではない。** `npm pack` の出力は同じソースからなら 1 バイトまで再現するが、
-エンジン側の `main` は同じ `0.2.0` のまま中身が進むことがある（実際、現在の `main` を
-ビルドすると `dist/index.js` の内容が上表の tarball と一致しない）。したがって
-
-- 誰かから受け取った tarball の同一性を確かめるときだけ、上表と照合する。
-- 自分でビルドしたものに差し替えるときは、ハッシュ不一致を異常とみなさない。差し替え後に
-  `npm run build` と `npm test` を通し、実画面を確認したうえで上表を新しい値に更新する。
-
-### 3. 依存を入れる
-
-```bash
-npm install
-```
-
-`package-lock.json` は `file:` 参照を記録するだけで tarball の中身を持たない。したがって
-**tarball を差し替えても lockfile は変わらず、古い `node_modules` のまま動いてしまう**。
-エンジンを更新したときは必ず次を実行する。
-
-```bash
-rm -rf node_modules && npm install
-```
-
-導入できたかは開発サーバの起動で確かめる。
-
-```bash
-npm run dev
-```
+エンジンを再生成する場合は、隣のConsoleChaosEngineの **gen1-fds** ブランチで `npm run pack:distribution` を実行し、
+`artifacts/console-chaos-engine-0.2.0.tgz` を上記 `-fds.tgz` 名でコピーして、
+`npm install ./reference/console-chaos-engine-0.2.0-fds.tgz` でlockfileと依存を更新します。
+`main` から再生成するとこの追加APIを利用できません。
 
 ## 開発
 

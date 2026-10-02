@@ -1,0 +1,72 @@
+[
+  {
+    "file": "puzzle-stage1-apu.wav",
+    "seconds": 68.22666666666667,
+    "peak": 0.26245906949043274,
+    "rms": 0.06937610843608978,
+    "maxSampleDelta": 0.07929486781358719
+  },
+  {
+    "file": "puzzle-stage1-fds.wav",
+    "seconds": 68.22666666666667,
+    "peak": 0.3101844787597656,
+    "rms": 0.07779608152785754,
+    "maxSampleDelta": 0.08752823248505592
+  },
+  {
+    "file": "puzzle-stage2-apu.wav",
+    "seconds": 62.026666666666664,
+    "peak": 0.26237305998802185,
+    "rms": 0.06934745876189366,
+    "maxSampleDelta": 0.07829267159104347
+  },
+  {
+    "file": "puzzle-stage2-fds.wav",
+    "seconds": 62.026666666666664,
+    "peak": 0.30738580226898193,
+    "rms": 0.07730983418984365,
+    "maxSampleDelta": 0.084813192486763
+  },
+  {
+    "file": "puzzle-stage3-apu.wav",
+    "seconds": 73.12533333333333,
+    "peak": 0.26259374618530273,
+    "rms": 0.06943972725924816,
+    "maxSampleDelta": 0.07503439486026764
+  },
+  {
+    "file": "puzzle-stage3-fds.wav",
+    "seconds": 73.12533333333333,
+    "peak": 0.3096587657928467,
+    "rms": 0.07831547084313062,
+    "maxSampleDelta": 0.08325272519141436
+  },
+  {
+    "file": "puzzle-stage4-apu.wav",
+    "seconds": 56.87733333333333,
+    "peak": 0.26244455575942993,
+    "rms": 0.06936250164744749,
+    "maxSampleDelta": 0.07929486781358719
+  },
+  {
+    "file": "puzzle-stage4-fds.wav",
+    "seconds": 56.87733333333333,
+    "peak": 0.3082178235054016,
+    "rms": 0.07882850886856142,
+    "maxSampleDelta": 0.08752823248505592
+  },
+  {
+    "file": "racing-apu.wav",
+    "seconds": 52.552,
+    "peak": 0.3014093041419983,
+    "rms": 0.07405365431801071,
+    "maxSampleDelta": 0.09215113520622253
+  },
+  {
+    "file": "racing-fds.wav",
+    "seconds": 52.552,
+    "peak": 0.35407352447509766,
+    "rms": 0.0847083942138012,
+    "maxSampleDelta": 0.10253819078207016
+  }
+]

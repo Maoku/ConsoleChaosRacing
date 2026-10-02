@@ -204,14 +204,17 @@ function eachBar<T>(build: (bar: number, chord: Chord, section: number) => T[]):
 // ── パート。どれも「和声進行 ＋ 楽節の並び」から出る ────────────────────────
 
 /** 主旋律 */
+/** Original “Neon overdrive”: four distinct phrases over 32 bars (~50 seconds). */
 function melodyNotes(): Note[] {
-  return eachBar((bar, _chord, section) => {
-    const { melody, velocity } = SECTIONS[section]!;
-    return melody[bar % PHRASE_BARS]!.map((note) => ({
-      tick: bar * TICKS_PER_BAR + note.at,
-      durationTicks: note.length,
-      pitch: note.pitch,
-      velocity,
+  const motifs = [[7,12,10,7,3,7,2,0], [12,15,14,10,7,10,14,12],
+    [19,15,12,14,10,7,10,14], [12,7,15,14,19,17,14,11]];
+  return eachBar((bar, chord, section) => {
+    const phrase = motifs[section]!;
+    return phrase.map((interval, step) => ({
+      tick: bar * TICKS_PER_BAR + step * EIGHTH,
+      durationTicks: EIGHTH,
+      pitch: chord.root + 24 + interval - (bar % 4 === 3 ? 12 : 0),
+      velocity: SECTIONS[section]!.velocity * (step % 2 ? 0.86 : 1),
     }));
   });
 }

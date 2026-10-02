@@ -1,0 +1,52 @@
+[
+  {
+    "game": "puzzle",
+    "checks": {
+      "fc": "psg-fds",
+      "sfc": "brr",
+      "stopped": true,
+      "resumed": true,
+      "tick": 35.150367346938765
+    },
+    "liveVoicesAfterStop": 0,
+    "suspendedContextSimulated": true,
+    "errors": [],
+    "beforeGesture": [
+      "suspended"
+    ],
+    "afterGesture": [
+      "running"
+    ],
+    "saved": {
+      "fds": true,
+      "silent": false,
+      "bgm": 0.37,
+      "sfx": 0.61
+    }
+  },
+  {
+    "game": "racing",
+    "checks": {
+      "fc": "psg-fds",
+      "sfc": "brr",
+      "stopped": true,
+      "resumed": true,
+      "tick": 293.11941950113396
+    },
+    "liveVoicesAfterStop": 0,
+    "suspendedContextSimulated": true,
+    "errors": [],
+    "beforeGesture": [
+      "suspended"
+    ],
+    "afterGesture": [
+      "running"
+    ],
+    "saved": {
+      "fds": true,
+      "silent": false,
+      "bgm": 0.37,
+      "sfx": 0.61
+    }
+  }
+]
