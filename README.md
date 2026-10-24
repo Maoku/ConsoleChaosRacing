@@ -29,7 +29,7 @@ npm install
 npm run pack:distribution
 ```
 
-- Node.js 22 以上が必要（エンジン側 `package.json` の `engines`）。
+- 開発には Node.js 24.22.1 以降の24系を使用（`nvm use` で `.nvmrc` の指定へ切り替え）。同梱エンジンの対応下限は変更しません。
 - `pack:distribution` は engine / engine-testkit / asset-pipeline の 3 パッケージをビルドし、
   `artifacts/` に tarball と `SHA256SUMS` を書き出す。本リポジトリが使うのは engine 本体
   （`artifacts/console-chaos-engine-0.2.0.tgz`）だけで、残り 2 つは不要。
