@@ -42,7 +42,10 @@
     "@types/node": "^26.6.2",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5",
-    "vitest": "^4.1.11"
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "source-map-js@1.2.1": "1.2.2"
   }
 }
